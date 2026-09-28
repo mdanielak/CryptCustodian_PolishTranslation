@@ -1,0 +1,148 @@
+CRYPT CUSTODIAN — SPOLSZCZENIE 1.0-beta
+Nieoficjalny fanowski patch, Steam AppID 2394650, Windows x64.
+Silnik: GameMaker / YYC. To nie jest mod Unity ani BepInEx.
+Publiczna beta, technicznie gotowa. Wersja pozostaje 1.0-beta.
+Wydanie jest bezpłatne. Jest to nieoficjalna, fanowska modyfikacja.
+Nie rościmy sobie praw własności do oryginalnej gry ani jej assetów (zasobów).
+Zmodyfikowane pliki wolno używać wyłącznie z legalnie uzyskanymi kopiami Crypt Custodian.
+Gra, jej zasoby i znaki towarowe należą do odpowiednich właścicieli.
+Nie jest to oficjalne wydanie ani deklaracja zatwierdzenia jakości przez
+twórców, wydawcę gry lub Valve.
+
+Treść zgody została przekazana przez użytkownika jako wiadomość od osoby
+przedstawiającej się jako developer i copyright holder Crypt Custodian.
+Nie zweryfikowano niezależnie tożsamości nadawcy, autorstwa ani autentyczności wiadomości.
+Pełny dosłowny cytat znajduje się w LICENSE-NOTICE.txt, w sekcji
+„CYTAT ANGIELSKI — TREŚĆ NADRZĘDNA”. Tekst angielski jest nadrzędną treścią
+zgody; polskie podsumowanie jest wyłącznie objaśnieniem.
+Objaśnienie: zgoda dotyczy tworzenia i utrzymywania fanowskiego tłumaczenia/
+modyfikacji data.win oraz dystrybucji zmodyfikowanych plików w tym projekcie
+pod czterema warunkami wskazanymi powyżej. Obejmuje wyodrębnianie, edytowanie,
+zastępowanie i ponowne pakowanie zawartości data.win, gdy jest to niezbędne
+do modyfikacji. Cytat nie wymienia osobno translations.ini; lista plików
+paczki jest opisem technicznym i nie rozszerza treści zgody.
+
+INSTALACJA OFFLINE
+1. Zapisz ZIP na dysku i porównaj jego SHA-256 z wartością otrzymaną
+   z zaufanego źródła. Uruchamiaj WYŁĄCZNIE paczkę o zgodnym SHA-256.
+   Bez wiarygodnej sumy lub przy niezgodności nie uruchamiaj skryptów.
+   Rozpakuj CAŁE archiwum do nowego, pustego katalogu.
+2. Zamknij grę i Steam. Wstrzymaj aktualizacje; nie uruchamiaj ich w trakcie.
+3. Uruchom instaluj.bat (nie z wnętrza ZIP). Nie potrzeba administratora,
+   chyba że uprawnienia katalogu gry uniemożliwiają zapis. Nie obchodź ACL.
+4. Potwierdź instalację znalezioną przez Steam lub wskaż jej katalog.
+   Nazwa folderu nie jest warunkiem: sprawdzany jest SHA EXE i obu plików.
+5. Po sukcesie uruchom grę samodzielnie i wybierz język English.
+
+Nie zmieniamy ustawień, zapisów gry, Steam Cloud, rejestru ani manifestów Steam.
+Instalator nie pobiera niczego z Internetu i nie uruchamia gry.
+Wymaga Windows PowerShell 5.1 i lokalnego dysku obsługującego File.Replace
+(zalecany NTFS). Odrzucane są ścieżki sieciowe, przekierowania ścieżek
+(reparse point, junction, symlink) i alternatywne strumienie danych (ADS).
+Potrzeba miejsca na trwałą kopię zapasową (~184 MB) i katalog roboczy
+(staging, ~184 MB), niezależnie od rozpakowanej paczki. Kopia zapasowa
+może znajdować się na innym dysku niż gra.
+
+Oba pliki BAT uruchamiają skrypt poleceniem:
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "<ścieżka skryptu>"
+Argumenty użytkownika są przekazywane do skryptu. Bypass dotyczy WYŁĄCZNIE
+tego procesu PowerShell; nie zmienia trwale polityki systemowej ani polityki
+użytkownika. Nie obchodzi zabezpieczeń gry, uprawnień plików ani antywirusa.
+Nie uruchamiaj niezaufanej paczki: Bypass wyłącza kontrolę polityki wykonywania
+skryptów w tym procesie. Nie stosujemy polecenia Set-ExecutionPolicy.
+Polityka organizacyjna (GPO) może mieć pierwszeństwo i blokować uruchomienie;
+w takim przypadku skontaktuj się z administratorem, nie obchodź jej.
+Jeśli potrzebne jest odblokowanie pliku pobranego z Internetu, dopiero po
+sprawdzeniu pochodzenia i zgodności SHA użyj Właściwości ZIP -> Odblokuj,
+a następnie rozpakuj do pustego katalogu.
+Skrypty i ZIP NIE mają podpisu cyfrowego. SHA wykrywa uszkodzenie, nie dowodzi
+autorstwa, jeśli napastnik zmieni również kod lub listę kontrolną.
+
+OBSŁUGIWANA WERSJA
+Wydanie jest przypięte do konkretnych hashów, nie tylko numeru Steam:
+CryptCustodian.exe:
+252277ea55574e67877fe20fd4532ff97b6bc75dc514605593c6788b1fa9c0a0
+Oryginalny data.win:
+15e2c8ef57f4c5f599589b5d15021281a11b73757be54d0bbf739d57dd280b99
+Oryginalny translations.ini:
+09d193cf8ef131c4bf9127bab49aeb9bf4c5cea88113a32d2c88813bd0dd286f
+Jeśli oba pliki są oryginalne i zgodne z obsługiwaną wersją (original),
+instalator zainstaluje spolszczenie. Jeśli oba są zgodne z tą paczką (PL / patched),
+poinformuje, że spolszczenie jest już zainstalowane (already-installed),
+bez tworzenia nowej kopii zapasowej. Brak pliku, nieznana wersja lub połączenie
+plików oryginalnych ze spolszczonymi powoduje odmowę bez podmian.
+Nie łącz tej paczki z innymi modami zmieniającymi te pliki.
+
+BEZPIECZEŃSTWO I KOPIE ZAPASOWE
+Oryginały są kopiowane i weryfikowane przed pierwszą podmianą do:
+%LOCALAPPDATA%\CryptCustodianPolishPatch\backups\<transaction-id>
+Są tam metadane kopii (receipt.json), manifest transakcji, sumy kontrolne,
+znacznik kompletności (complete) i dziennik zdarzeń.
+Nie usuwaj tego katalogu. W paczce NIE ma kopii oryginalnych plików gry.
+Instalator ma blokadę równoległych operacji dla danej ścieżki gry.
+Katalog roboczy (staging) powstaje w nowym .ccpl-stage-<id> na dysku gry.
+Każdy plik jest podmieniany atomowo przez .NET File.Replace; w razie błędu
+instalator nie próbuje zastępować tej operacji usunięciem i skopiowaniem pliku.
+Dwa pliki NIE stanowią jednej atomowej operacji. Przy obsłużonym błędzie
+wykonywane jest wycofywanie zmian (rollback) tylko rozpoznanych plików;
+nieznane dane pozostają. Wycofanie zmian potwierdza status rolled-back.
+Po przerwaniu procesu, awarii zasilania lub niepełnym wycofaniu zmian
+(recovery-required) nie uruchamiaj gry. Zachowaj raport i kopię zapasową,
+zgłoś problem lub użyj opcji „Sprawdź spójność plików” w Steam.
+Nie ma automatycznej naprawy mieszanej pary ani wymuszonego powrotu do
+starszej wersji gry (downgrade).
+Kontrole ścieżek i hashów ograniczają ryzyko, ale nie są sandboxem przeciw
+złośliwemu procesowi podmieniającemu pliki w tej samej chwili (TOCTOU).
+
+ODINSTALOWANIE
+Jeśli instalację wykonano poprzednią rewizją 1.0-beta, do odinstalowania użyj
+tej samej poprzedniej paczki. Zmiana treści zgody zmieniła hash manifestu;
+bez zmian logiki instalatora nowa rewizja nie przyjmuje backupów starej rewizji.
+Zachowaj właściwą paczkę wraz z kopią zapasową; nie edytuj metadanych backupu.
+Zamknij grę i Steam. Uruchom odinstaluj.bat z kompletnej paczki.
+Wymagane są oba pliki zgodne z tą paczką PL, zgodny EXE i kompletna,
+zweryfikowana kopia oryginalnych plików zapisana przez ten instalator
+na tym koncie Windows. Oryginały są przywracane przez File.Replace;
+kopie zapasowe i raporty pozostają po udanym odinstalowaniu (uninstall-ok).
+Jeśli PL wgrano wcześniej ręcznie i instalator informuje, że spolszczenie
+już jest zainstalowane (already-installed), nie może odtworzyć brakującej
+kopii oryginałów. Przywróć pliki opcją „Sprawdź spójność plików” w Steam.
+Aktualizacja lub „Sprawdź spójność plików” Steam usuwa patch. Po aktualizacji
+nie przywracaj starych plików na siłę — potrzebna może być nowa wersja patcha.
+
+STATUS BETA I RAPORTY
+Według potwierdzenia użytkownika test runtime pokazał polskie teksty oraz
+polskie znaki. Budowa tej paczki nie obejmowała nowego uruchomienia gry.
+Fonty obejmują ąćęłńóśźż ĄĆĘŁŃÓŚŹŻ. Plik instalacyjny INI zachowuje bajty zatwierdzonego
+eksportu; instalator nie przepisuje kodowania ani końców linii.
+125 wpisów tłumaczenia oznaczono jako niepewne (uncertain) — wymagają weryfikacji kontekstu.
+Nie oznacza to pełnej korekty językowej, testu każdej sceny ani całego UI.
+Zgłoszenie do osoby udostępniającej paczkę powinno zawierać: wersję 1.0-beta,
+scenę/tekst, oczekiwany wynik, zrzut ekranu i komunikat instalatora.
+Przed udostępnieniem raportu usuń prywatne fragmenty ścieżek. Nie wysyłaj
+zapisów gry, danych konta, kopii zapasowych gry ani całego data.win.
+
+TRYBY DIAGNOSTYCZNE (z katalogu paczki; podaj bezwzględną ścieżkę gry)
+.\instaluj.bat -GamePath "X:\Biblioteka\Gra" -Action Preflight -NonInteractive
+.\instaluj.bat -SelfTest
+.\odinstaluj.bat -SelfTest
+Kontrola wstępna (Preflight) jest wyłącznie odczytowa. Wynik preflight:original
+oznacza zgodne oryginały, a preflight:patched — zgodne pliki spolszczenia.
+SelfTest używa małych syntetycznych plików testowych w nowym katalogu
+tymczasowym, nie prawdziwej gry; pozostawia raport tests.json.
+SelfTest nie przyjmuje GamePath. Symulacja procesu nie uruchamia gry.
+INSTALACJA/ODINSTALOWANIE BEZ PYTAŃ — TE POLECENIA ZMIENIAJĄ PLIKI GRY
+.\instaluj.bat -GamePath "X:\Biblioteka\Gra" -NonInteractive
+.\odinstaluj.bat -GamePath "X:\Biblioteka\Gra" -NonInteractive
+Nieinteraktywna instalacja/odinstalowanie (Install/Uninstall) oznacza zgodę
+na operację, nie pomija kontroli bezpieczeństwa.
+Kod wyjścia: 0 sukces/preflight/already-installed, 1 odmowa/błąd.
+
+ZAWARTOŚĆ
+CZYTAJ_MNIE.txt, instaluj.bat, instaluj.ps1, odinstaluj.bat, odinstaluj.ps1,
+GameFiles\data.win, GameFiles\translations.ini, release-manifest.json,
+SHA256SUMS.txt, LICENSE-NOTICE.txt.
+SHA256SUMS obejmuje wszystkie pozostałe 9 plików; nie zawiera własnego hasha.
+Hash i rozmiar ZIP są w osobnym pliku obok archiwum.
+Skrypty PS1 i polskie dokumenty TXT: UTF-8 z BOM; BAT: ASCII/CRLF.
+Manifest JSON: UTF-8 bez BOM, wyłącznie znaki ASCII; SHA256SUMS: ASCII bez BOM.

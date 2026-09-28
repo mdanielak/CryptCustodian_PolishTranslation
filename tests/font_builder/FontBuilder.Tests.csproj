@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <ToolDir>$(MSBuildThisFileDirectory)..\..\work\tools\UTMT_CLI_v0.9.2.0-Windows</ToolDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\font_builder_core.cs" Link="font_builder_core.cs" />
+    <Compile Include="..\..\font_builder_io.cs" Link="font_builder_io.cs" />
+    <Reference Include="UndertaleModLib"><HintPath>$(ToolDir)\UndertaleModLib.dll</HintPath></Reference>
+    <Reference Include="UndertaleModCli"><HintPath>$(ToolDir)\UndertaleModCli.dll</HintPath></Reference>
+    <Reference Include="Underanalyzer"><HintPath>$(ToolDir)\Underanalyzer.dll</HintPath></Reference>
+    <Reference Include="Magick.NET-Q8-AnyCPU"><HintPath>$(ToolDir)\Magick.NET-Q8-AnyCPU.dll</HintPath></Reference>
+    <Reference Include="Magick.NET.Core"><HintPath>$(ToolDir)\Magick.NET.Core.dll</HintPath></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(ToolDir)\Newtonsoft.Json.dll</HintPath></Reference>
+    <Reference Include="Microsoft.CodeAnalysis"><HintPath>$(ToolDir)\Microsoft.CodeAnalysis.dll</HintPath></Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp"><HintPath>$(ToolDir)\Microsoft.CodeAnalysis.CSharp.dll</HintPath></Reference>
+    <Reference Include="Microsoft.CodeAnalysis.Scripting"><HintPath>$(ToolDir)\Microsoft.CodeAnalysis.Scripting.dll</HintPath></Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp.Scripting"><HintPath>$(ToolDir)\Microsoft.CodeAnalysis.CSharp.Scripting.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

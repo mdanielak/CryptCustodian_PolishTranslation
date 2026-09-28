@@ -1,0 +1,84 @@
+# Lokalne katalogi robocze i artefakty wydania
+/work/
+/release/
+/inputs/
+/reports/
+/artifacts/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# .NET i IDE
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+.vs/
+.idea/
+.vscode/
+
+# Pliki tymczasowe i kopie
+*.log
+*.tmp
+*.bak*
+
+# Archiwa wydaniowe
+*.zip
+*.7z
+*.rar
+
+# Pliki gry i jej dane binarne
+data.win
+translations.ini
+CryptCustodian.exe
+*.dll
+*.exe
+*.dat
+*.mp4
+*.bnvib
+
+# Lokalne narzędzia, klony i raporty zawierające dane środowiska
+tools/local/
+tools/umt/
+umt/
+UndertaleModTool/
+local-toolchains/
+*-local-report.*
+*local-path*.json
+
+# Prywatne historyczne raporty/notatki: zachować lokalnie, nie publikować.
+/ACCEPTED_PL_EXPORT.md
+/AUDIT_RESULTS.md
+/CORPUS_BATCHES.md
+/DATA_FONT.md
+/DATA_NOOP.md
+/DISCOVERY.md
+/FONT_AUDIT_RESULTS.md
+/FONT_BUILDER.md
+/FONT_CODEC_AUDIT.md
+/FONT_INSPECTOR.md
+/PLAN.md
+/RELEASE.md
+/RUNTIME_TEST_RESULTS.md
+/STANDALONE_ADAPTER.md
+/TRANSLATION_WORKFLOW.md
+/YYC_AUDIT_RESULTS.md
+/YYC_STRING_INSPECTOR.md
+
+# Publiczne docs: świadoma allowlista, bez ignorowania źródeł tools/release.
+/docs/**/*.md
+!/docs/POST_RELEASE.md
+!/docs/DEVELOPMENT.md
+
+# Sekrety i konfiguracja lokalna
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
