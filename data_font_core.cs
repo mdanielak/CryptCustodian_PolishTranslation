@@ -13,14 +13,20 @@ namespace CCDataFont;
 
 public static class FontWriter
 {
+    // Writer-only override: no-op keeps its original source contract. The game
+    // root remains required and independently protected even for an offline copy.
+    public static string Source => NoopPolicy.ConfiguredPath("CC_DATA_SOURCE", NoopPolicy.Source);
+    public static string[] ProtectedRoots => new[] { NoopPolicy.GameRoot, Path.GetDirectoryName(Source), BundlePath };
     public static string BundlePath => NoopPolicy.ConfiguredPath("CC_FONT_BUNDLE");
     public static readonly string[] Names = { "Nerko", "NerkoLarge", "NerkoLarge2", "NerkoSmall" };
     public static readonly int[] OldTpag = { 142, 136, 137, 147 }, OldTxtr = { 13, 14, 14, 13 };
     public static readonly (int W, int H)[] OldSize = { (512,512), (1024,1024), (1024,1024), (512,256) };
     public static readonly Dictionary<string, (int Size, string Hash)> Pins = new()
     {
-        ["manifest.json"] = (15396,"b84dff5861f1aa5804c379679aa99b15970e1dcb4e2da75722ff6f3a5d528daf"),
-        ["report.json"] = (169982,"c0c204fc6329e772852fdb7f294ccc6a4bdb5701282623d725eae1f407f11b38"),
+        // Verified cc-spacing-verified-lolo8ojv/cc-font-atlas-007 bundle.
+        // Lowercase-only Offset/Shift correction; all four RGBA payloads unchanged.
+        ["manifest.json"] = (15394,"519f8ab82cf08ca88aea3b52cacbf5d9a804e0ea9be80dd5fde63401f02bbad0"),
+        ["report.json"] = (170011,"02b2b719b0e11112156663837ed4776cdfd9d22c85fe57fed968ba4a4617d726"),
         ["Nerko.rgba"] = (184320,"6a3ad0d72f164872b4b6607cce3667c9ba9b967074a61e1f634d72d95c411527"),
         ["NerkoLarge.rgba"] = (499712,"0ffdafc87619c7ab2bc673e44021e1e8335a2339eb725f23589606cfa0d00ac5"),
         ["NerkoLarge2.rgba"] = (446464,"8d0d703cb1403a3d3b8a96e7ea098d0001828a555546d875fd8630df0ba83592"),
@@ -31,6 +37,19 @@ public static class FontWriter
     public static int N(JsonElement x, string key) => x.GetProperty(key).GetInt32();
     public static string S(JsonElement x, string key) => x.GetProperty(key).GetString();
     public static void Pin(byte[] bytes, int size, string hash) => Need(bytes.Length == size && FrozenBytes.Hash(bytes) == hash, "BUNDLE_HASH_SIZE");
+    public static void ValidateSourceIdentity(JsonElement report)
+    {
+        // Historical location is provenance, not the identity of a read-only copy.
+        // Never rewrite the pinned report or require its old location to exist.
+        FontBuilderCore.Absolute(S(report,"source"));
+        Need(S(report,"sourceSha256") == NoopPolicy.SourceSha256 && N(report,"sourceBytes") == 182801522, "BUNDLE_SOURCE");
+    }
+    public static FrozenBytes ReadSource()
+    {
+        FontBuilderIO.NoLinks(Source);
+        var bytes=FrozenBytes.ReadFile(Source); bytes.RequireHash(NoopPolicy.SourceSha256);
+        Need(bytes.Length==182801522,"SOURCE_SIZE"); return bytes;
+    }
     public sealed record Bundle(JsonElement Manifest, JsonElement Report, Dictionary<string, byte[]> Files);
     public static Bundle LoadBundle()
     {
@@ -40,12 +59,34 @@ public static class FontWriter
         foreach (var p in Pins) { var b = FontBuilderIO.Read(Path.Combine(BundlePath,p.Key), 1024*1024); Pin(b,p.Value.Size,p.Value.Hash); files.Add(p.Key,b); }
         var manifest = FontBuilderCore.Parse(files["manifest.json"]); var report = FontBuilderCore.Parse(files["report.json"]);
         Need(S(report,"schema") == "cc-font-atlas-report/v1" && S(report,"status") == "candidate" && S(report,"recipe") == "existing-pixels/v3", "BUNDLE_REPORT");
-        Need(S(report,"source") == NoopPolicy.Source && S(report,"sourceSha256") == NoopPolicy.SourceSha256 && N(report,"sourceBytes") == 182801522, "BUNDLE_SOURCE");
+        ValidateSourceIdentity(report);
         Need(report.GetProperty("outputs").GetArrayLength() == 5 && report.GetProperty("provenance").GetArrayLength() == 4, "BUNDLE_COUNTS");
+        Need(report.GetProperty("outputs").EnumerateArray().Select(o=>S(o,"file")).Order().SequenceEqual(Pins.Keys.Where(k=>k!="report.json").Order()),"BUNDLE_OUTPUT_SET");
         foreach (var o in report.GetProperty("outputs").EnumerateArray()) Pin(files[S(o,"file")],N(o,"bytes"),S(o,"sha256"));
         Need(report.GetProperty("diagnostics").EnumerateArray().Count(x => S(x,"status") == "preserved") == 8 &&
             report.GetProperty("diagnostics").EnumerateArray().Count(x => S(x,"status") == "composed-offline-candidate") == 64, "BUNDLE_DIAGNOSTICS");
-        return new(manifest,report,files);
+        var bundle=new Bundle(manifest,report,files); ValidateBundleContent(bundle); return bundle;
+    }
+    public static void ValidateBundleContent(Bundle bundle)
+    {
+        FontBuilderCore.ValidateManifest(bundle.Manifest,Names,false,
+            Names.ToDictionary(n=>n,n=>new[]{(int)'ó',(int)'Ó'}),
+            bundle.Files.Where(x=>x.Key.EndsWith(".rgba")).ToDictionary(x=>x.Key,x=>x.Value));
+        for(int i=0;i<4;i++)
+        {
+            var m=bundle.Manifest.GetProperty("fonts")[i]; var p=bundle.Report.GetProperty("provenance")[i];
+            Need(S(m,"name")==Names[i] && S(p,"name")==Names[i],"BUNDLE_FONT_ORDER");
+            var glyphs=m.GetProperty("glyphs").EnumerateArray().ToArray();
+            var additions=p.GetProperty("additions").EnumerateArray().ToArray();
+            Need(additions.Select(a=>S(a,"character")).Order().SequenceEqual(glyphs.Select(g=>S(g,"character")).Order()),"BUNDLE_ADDITION_SET");
+            var atlas=m.GetProperty("atlas");
+            foreach(var g in glyphs)
+            {
+                var a=additions.Single(a=>S(a,"character")==S(g,"character"));
+                var crop=Crop(bundle.Files[S(atlas,"file")],N(atlas,"width"),N(atlas,"height"),N(g,"x"),N(g,"y"),N(g,"width"),N(g,"height"));
+                Need(FrozenBytes.Hash(crop)==S(a,"resultSha256") && N(g,"shift")==N(a,"shift") && N(g,"offset")==N(a,"offset"),"BUNDLE_GLYPH_PROVENANCE");
+            }
+        }
     }
     public sealed record Placement(ushort Code, int X, int Y, int W, int H);
     public sealed record Layout(int Width, int Height, Placement[] Glyphs);

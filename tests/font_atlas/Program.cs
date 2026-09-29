@@ -41,16 +41,16 @@ internal static class Program
     static FontAtlasCore.Composed Compose(char c) => FontAtlasCore.Compose(c, Glyph(FontAtlasCore.Base(c)),
         "ćńśźĆŃŚŹ".Contains(c) ? Acute() : "ąęĄĘ".Contains(c) ? Comma() : "łŁ".Contains(c) ? Slash() : Dot(),
         "ąęĄĘ".Contains(c) ? "," : "łŁ".Contains(c) ? "/" : "synthetic-fixture", 24);
-    static void BasePreserved(G old, G added)
+    static void BasePreserved(G old, G added, int optical = 0, int? expectedShift = null)
     {
-        int translation = old.Offset - added.Offset;
+        int translation = old.Offset + optical - added.Offset;
         for (int y = 0; y < old.Image.H; y++) for (int x = 0; x < old.Image.W; x++) if (old.Image.Ink(x, y))
         {
             int nextX = x + translation;
-            Assert(old.Offset + x == added.Offset + nextX, "rendered x changed");
+            Assert(old.Offset + x + optical == added.Offset + nextX, "unexpected pen-space translation");
             for (int c = 0; c < 4; c++) Assert(old.Image.Pixels[(y * old.Image.W + x) * 4 + c] == added.Image.Pixels[(y * added.Image.W + nextX) * 4 + c], "base pixel/baseline changed");
         }
-        Assert(old.Shift == added.Shift, "advance changed");
+        Assert((expectedShift ?? old.Shift) == added.Shift, "advance changed");
         Assert(old.Kerning.GetRawText() == added.Kerning.GetRawText(), "kerning changed");
     }
     static int Main(string[] args)
@@ -204,7 +204,12 @@ internal static class Program
         foreach (char ch in "ąćęłńśźżĄĆĘŁŃŚŹŻ")
         {
             char c = ch;
-            Test("baseline/base/metrics preserved " + c, () => { var result = Compose(c); BasePreserved(Glyph(FontAtlasCore.Base(c)), result.Glyph); Assert(result.Glyph.Image.H <= 24); });
+            Test("baseline/base/metrics preserved " + c, () => {
+                var result = Compose(c); BasePreserved(Glyph(FontAtlasCore.Base(c)), result.Glyph,
+                    c == 'ł' ? 1 : 0, c == 'ł' ? 14 : 13);
+                Assert(result.Glyph.Image.H <= 24);
+                if (!"łŁ".Contains(c)) Assert(result.Glyph.Shift == 13 && result.Glyph.Offset == -1, "nonstroke metrics changed");
+            });
             Test("deterministic pixels and provenance " + c, () => {
                 var a = Compose(c); var b = Compose(c);
                 Assert(a.Glyph.Image.Pixels.SequenceEqual(b.Glyph.Image.Pixels));
@@ -227,7 +232,7 @@ internal static class Program
         Test("stroke preserves crossing pixels and adjusts bearing", () => {
             var basis = Glyph('l', Pixels(4, 24, (x, y) => y >= 4 && y <= 21), 0);
             var result = FontAtlasCore.Compose('ł', basis, Slash(), "/", 24).Glyph;
-            Assert(result.Offset < 0 && result.Image.W > basis.Image.W); BasePreserved(basis, result);
+            Assert(result.Offset < 0 && result.Image.W > basis.Image.W); BasePreserved(basis, result, 1, basis.Shift + 1);
         });
         Test("narrow l retains slash AA, safe canvas and metrics", () => {
             var basis = Glyph('l', Pixels(6, 40, (x, y) => x >= 1 && x <= 4 && y >= 4 && y <= 35), 0, 8);
@@ -236,10 +241,76 @@ internal static class Program
             Assert(result.Offset < 0 && result.Image.W > basis.Image.W && result.Shift >= basis.Shift);
             Assert(result.Image.Pixels.Where((v, i) => i % 4 == 3).Any(v => v > 0 && v < 255));
             Assert(Enumerable.Range(0, result.Image.H).All(y => !result.Image.Ink(0, y) && !result.Image.Ink(result.Image.W - 1, y)));
-            int oldShift = basis.Shift; basis.Shift = result.Shift; BasePreserved(basis, result); basis.Shift = oldShift;
+            BasePreserved(basis, result, 1, basis.Shift + 1);
             var again = FontAtlasCore.Compose('ł', basis, mark, "/", 40, 40).Glyph;
             Assert(again.Offset == result.Offset && again.Shift == result.Shift && again.Image.Pixels.SequenceEqual(result.Image.Pixels));
         });
+        foreach (char c in "łŁ")
+        {
+            Test("lowercase optical spacing / unchanged uppercase alpha-edge spacing " + c, () => {
+                bool upper = c == 'Ł';
+                var image = Pixels(16, 24, (x, y) =>
+                    (x >= 2 && x <= 5 && y >= 4 && y <= 21) ||
+                    (upper && x >= 2 && x <= 10 && y >= 20 && y <= 21));
+                // A connected faint AA pixel is part of the uppercase foot, not padding.
+                if (upper) image.Pixels[(21 * image.W + 11) * 4 + 3] = 1;
+                var basis = Glyph(FontAtlasCore.Base(c), image, 1, upper ? 13 : 8);
+                var before = (byte[])image.Pixels.Clone();
+                string kerning = basis.Kerning.GetRawText();
+                var result = FontAtlasCore.Compose(c, basis, Slash(), "/", 24);
+                var g = result.Glyph; var bounds = FontAtlasCore.Bounds(g.Image);
+                int right = g.Offset + bounds.x + bounds.w;
+                int oldAdvance = Math.Max(basis.Shift, g.Offset + g.Image.W + 1);
+                Assert(right == (upper ? 13 : 12) && oldAdvance == (upper ? 18 : 19), "fixture geometry changed");
+                Assert(g.Shift == (upper ? 14 : 9), "unexpected exact advance: " + g.Shift);
+                Assert(g.Offset == (upper ? -2 : -1) && g.Image.W == 19 && g.Image.H == 24, "canvas/bearing changed");
+                Assert(g.Shift < oldAdvance, "transparent canvas still inflates advance");
+                if (upper) Assert(g.Shift == Math.Max(basis.Shift, right + 1), "uppercase changed");
+                else Assert(g.Shift == basis.Shift + 1 && g.Shift < right, "lowercase must allow overhang");
+                Assert(basis.Shift == (upper ? 13 : 8) && basis.Offset == 1 && basis.Character == FontAtlasCore.Base(c), "plain l/L metrics mutated");
+                Assert(before.SequenceEqual(image.Pixels) && basis.Kerning.GetRawText() == kerning, "plain l/L input mutated");
+                Assert(g.Kerning.GetRawText() == kerning, "stroke kerning changed");
+                BasePreserved(basis, g, upper ? 0 : 1, g.Shift);
+                var p = JsonSerializer.SerializeToElement(result.Provenance);
+                Assert(p.GetProperty("shift").GetInt32() == g.Shift && p.GetProperty("shiftDelta").GetInt32() == g.Shift - basis.Shift);
+                // More alpha-zero pixels (even with hidden RGB) must not move the next pen.
+                var padded = new byte[32 * image.H * 4];
+                for (int y = 0; y < image.H; y++)
+                {
+                    Array.Copy(image.Pixels, y * image.W * 4, padded, y * 32 * 4, image.W * 4);
+                    for (int x = image.W; x < 32; x++) padded[(y * 32 + x) * 4] = 255;
+                }
+                var paddedResult = FontAtlasCore.Compose(c, Glyph(basis.Character, new B(32, image.H, padded), 1, basis.Shift), Slash(), "/", 24).Glyph;
+                Assert(paddedResult.Shift == g.Shift && paddedResult.Offset == g.Offset, "advance depends on transparent padding");
+                Assert(FontAtlasCore.Bounds(paddedResult.Image) == bounds, "padding changed visible geometry");
+                for (int y = 0; y < g.Image.H; y++) for (int x = 0; x < g.Image.W; x++)
+                    for (int channel = 0; channel < 4; channel++)
+                        Assert(g.Image.Pixels[(y * g.Image.W + x) * 4 + channel] == paddedResult.Image.Pixels[(y * paddedResult.Image.W + x) * 4 + channel], "padding changed bitmap");
+            });
+        }
+        foreach (float em in new[] { 22f, 26f, 48f, 64f, 72f, 96f })
+            Test("lowercase metrics-only correction scales with em=" + em, () => {
+                var image = Pixels(6, 40, (x, y) => x >= 1 && x <= 4 && y >= 4 && y <= 35);
+                var basis = Glyph('l', image, 0, 8);
+                // Same l bitmap as L: composition geometry is identical, but uppercase
+                // keeps the previous spacing policy. This freezes the relative shape.
+                var old = FontAtlasCore.Compose('Ł', Glyph('L', image, 0, 8), Slash(), "/", 40, em);
+                var result = FontAtlasCore.Compose('ł', basis, Slash(), "/", 40, em);
+                int unit = Math.Max(1, (int)Math.Floor(em / 32.0 + 0.5));
+                Assert(result.Glyph.Image.W == old.Glyph.Image.W && result.Glyph.Image.H == old.Glyph.Image.H);
+                Assert(result.Glyph.Image.Pixels.SequenceEqual(old.Glyph.Image.Pixels), "bitmap changed");
+                Assert(result.Glyph.Offset == old.Glyph.Offset + unit && result.Glyph.Shift == basis.Shift + unit);
+                BasePreserved(basis, result.Glyph, unit, basis.Shift + unit);
+                var a = JsonSerializer.SerializeToElement(old.Provenance);
+                var b = JsonSerializer.SerializeToElement(result.Provenance);
+                foreach (string key in new[] { "geometry", "donorTransform", "markSha256", "resultSha256", "baseX", "baseY" })
+                    Assert(a.GetProperty(key).GetRawText() == b.GetProperty(key).GetRawText(), "relative geometry changed: " + key);
+                var moved = FontAtlasCore.Compose('ł', Glyph('l', image, 10, 8), Slash(), "/", 40, em).Glyph;
+                Assert(moved.Shift == result.Glyph.Shift && moved.Offset == result.Glyph.Offset + 10,
+                    "advance depends on right alpha edge in pen space");
+                Assert(moved.Image.Pixels.SequenceEqual(result.Glyph.Image.Pixels));
+                Assert(basis.Offset == 0 && basis.Shift == 8 && basis.Image.Pixels.SequenceEqual(image.Pixels));
+            });
         Test("stroke too thick for height refused", () => Refuse(() => FontAtlasCore.Compose('ł', Glyph('l'),
             Pixels(16, 18, (x, y) => Math.Abs(x - (12 - y * 0.4)) <= 4), "/", 24, 24), "STROKE_TOO_THICK"));
         Test("stroke too long relative to height refused", () => Refuse(() => FontAtlasCore.Compose('Ł',
@@ -321,7 +392,10 @@ internal static class Program
             {
                 int x = r.GetProperty("x").GetInt32(), y = r.GetProperty("y").GetInt32(), w = r.GetProperty("width").GetInt32(), h = r.GetProperty("height").GetInt32();
                 char c = r.GetProperty("character").GetString()[0];
-                Assert(FontAtlasCore.Crop(packed.image, x, y, w, h).Pixels.SequenceEqual(all.Single(a => a.Glyph.Character == c).Glyph.Image.Pixels));
+                var original = all.Single(a => a.Glyph.Character == c).Glyph;
+                Assert(FontAtlasCore.Crop(packed.image, x, y, w, h).Pixels.SequenceEqual(original.Image.Pixels));
+                Assert(r.GetProperty("shift").GetInt32() == original.Shift && r.GetProperty("offset").GetInt32() == original.Offset);
+                Assert(r.GetProperty("kerning").GetRawText() == original.Kerning.GetRawText());
                 Assert(Enumerable.Range(x - 1, w + 2).All(xx => !packed.image.Ink(xx, y - 1) && !packed.image.Ink(xx, y + h)));
                 Assert(Enumerable.Range(y, h).All(yy => !packed.image.Ink(x - 1, yy) && !packed.image.Ink(x + w, yy)));
                 foreach (var s in rects.Where(s => s.GetProperty("character").GetString()[0] != c))
@@ -353,7 +427,9 @@ internal static class Program
                 new Dictionary<string, byte[]> { ["Nerko.rgba"] = p.image.Pixels });
         });
         int dumpArg = Array.IndexOf(args, "--donor-dump");
-        if (dumpArg >= 0) DonorDumpTests.Run(args[dumpArg + 1], Test, args.Contains("--review-dump"));
+        int baselineArg = Array.IndexOf(args, "--baseline-bundle");
+        if (dumpArg >= 0) DonorDumpTests.Run(args[dumpArg + 1], Test, args.Contains("--review-dump"),
+            baselineArg >= 0 ? args[baselineArg + 1] : null);
         Console.WriteLine("Generator tests: " + passed + " passed, " + failed + " failed; no data.win, generator Run or publication I-O.");
         return failed == 0 ? 0 : 1;
     }

@@ -16,7 +16,7 @@ public static class OutputIO
     public static string Reserve(string prefix)
     {
         Need(new[]{"cc-data-font-","cc-data-font-tests-"}.Contains(prefix),"RUN_PREFIX");
-        FontBuilderIO.CheckExternalDirectory(NoopPolicy.TempRoot, NoopPolicy.GameRoot);
+        FontBuilderIO.CheckExternalDirectory(NoopPolicy.TempRoot, ProtectedRoots);
         for(int i=1;i<=999999;i++)
         {
             string run=Path.Combine(NoopPolicy.TempRoot,prefix+i.ToString("D3"));
@@ -24,7 +24,7 @@ public static class OutputIO
             string release=Path.Combine(run,"release");
             Need(CreateDirectoryExclusive(release,IntPtr.Zero),"CREATE_RELEASE");
             // Includes physical local volume, 8.3, reparse and whole-game exclusion.
-            FontBuilderIO.CheckNewOutputDirectory(Path.Combine(release,"data.win"),Path.GetDirectoryName(NoopPolicy.Source));
+            FontBuilderIO.CheckNewOutputDirectory(Path.Combine(release,"data.win"),ProtectedRoots);
             return release;
         }
         throw new GateRefusal("NO_FREE_RUN");
@@ -33,7 +33,7 @@ public static class OutputIO
     {
         // This existing path guard checks an absent leaf and its physical release
         // parent (no creation); unlike CheckOutput it is not JSON-only.
-        FontBuilderIO.CheckNewOutputDirectory(path,Path.GetDirectoryName(NoopPolicy.Source));
+        FontBuilderIO.CheckNewOutputDirectory(path,ProtectedRoots);
         using var s=new FileStream(path,FileMode.CreateNew,FileAccess.ReadWrite,FileShare.None);
         write(s); s.Flush(true);
     }
@@ -220,6 +220,22 @@ public static class Host
     {
         var diff=expected.Diff(actual,64); Report[name]=diff; Need(diff.Total==0,name+" differences="+diff.Total+" "+JsonSerializer.Serialize(diff.Items));
     }
+    public static object InputProvenance(Bundle bundle) => new {
+        source=Source, gameRoot=NoopPolicy.GameRoot, outputRoot=NoopPolicy.TempRoot,
+        bundleSource=S(bundle.Report,"source"), sourceIdentity="sha256-and-size",
+        sourceSha256=NoopPolicy.SourceSha256, sourceBytes=182801522,
+        bundlePath=BundlePath, files=Pins.Select(x=>new{file=x.Key,bytes=x.Value.Size,sha256=x.Value.Hash}).ToArray()
+    };
+    static int VerifyInputs()
+    {
+        // No reservation, parser, serializer or write, including on refusal.
+        FontBuilderIO.CheckExternalDirectory(NoopPolicy.TempRoot,ProtectedRoots);
+        var bundle=LoadBundle(); ReadSource();
+        Console.WriteLine(System.Text.Encoding.UTF8.GetString(Json(new {
+            status="inputs-verified", provenance=InputProvenance(bundle),
+            gameParsed=false, dataWritten=false, roundTripValidated=false
+        }))); return 0;
+    }
     static int Build()
     {
         int exit=2;
@@ -231,7 +247,8 @@ public static class Host
             Report["runtime"]=RuntimeInformation.FrameworkDescription; Report["hostSha256"]=FrozenBytes.ReadFile(typeof(Host).Assembly.Location).Sha256;
             Report["umtSha256"]=NoopPolicy.UmtSha256; Report["underanalyzerSha256"]=NoopPolicy.UnderanalyzerSha256;
             var bundle=LoadBundle(); Report["bundle"]=new{path=BundlePath,files=Pins.Select(x=>new{file=x.Key,bytes=x.Value.Size,sha256=x.Value.Hash})};
-            FontBuilderIO.NoLinks(NoopPolicy.Source); var source=FrozenBytes.ReadFile(NoopPolicy.Source); source.RequireHash(NoopPolicy.SourceSha256);
+            Report["inputProvenance"]=InputProvenance(bundle);
+            var source=ReadSource();
             Report["sourceSha256"]=source.Sha256; Report["sourceSize"]=source.Length;
             var rawBefore=BinaryLayout.Parse(source); Report["rawBefore"]=rawBefore;
             using var input=source.OpenRead(); using var data=UndertaleIO.Read(input,NoopPolicy.FatalWarning);
@@ -269,7 +286,7 @@ public static class Host
         {
             if(release!=null) try
             {
-                var sourceAfter=FrozenBytes.ReadFile(NoopPolicy.Source); Report["sourceSha256After"]=sourceAfter.Sha256; sourceAfter.RequireHash(NoopPolicy.SourceSha256);
+                var sourceAfter=ReadSource(); Report["sourceSha256After"]=sourceAfter.Sha256;
                 string output=Path.Combine(release,"data.win");
                 if(File.Exists(output)) { using var f=File.OpenRead(output); Report["retainedOutputSize"]=f.Length; Report["retainedOutputSha256"]=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(f)).ToLowerInvariant(); }
                 OutputIO.SaveJson(release,"report.json",Report); Console.WriteLine("REPORT "+Path.Combine(release,"report.json"));
@@ -280,20 +297,32 @@ public static class Host
     }
     static int Compare(string a,string b)
     {
+        var verified=new List<FrozenBytes>();
         foreach(string p in new[]{a,b})
         {
             Need(System.Text.RegularExpressions.Regex.IsMatch(p,"\\A"+System.Text.RegularExpressions.Regex.Escape(NoopPolicy.TempRoot)+@"\\cc-data-font-[0-9]{3,}\\release\z"),"COMPARE_PATH");
             FontBuilderIO.NoLinks(p); var r=FontBuilderCore.Parse(FontBuilderIO.Read(Path.Combine(p,"report.json"),1024*1024)); Need(S(r,"status")=="font-candidate-verified","COMPARE_NOT_VERIFIED");
+            FontBuilderIO.CheckExternalDirectory(p,ProtectedRoots);
+            var data=FrozenBytes.ReadFile(Path.Combine(p,"data.win")); ValidateComparisonReport(r,data); verified.Add(data);
         }
-        Need(a!=b,"COMPARE_INDEPENDENT");
-        var left=FrozenBytes.ReadFile(Path.Combine(a,"data.win")); var right=FrozenBytes.ReadFile(Path.Combine(b,"data.win"));
+        Need(!a.Equals(b,StringComparison.OrdinalIgnoreCase),"COMPARE_INDEPENDENT");
+        var left=verified[0]; var right=verified[1];
         var diff=BinaryLayout.Compare(left,right,64); Need(diff.ChangedBytes==0,"NONDETERMINISTIC_BYTES");
         OutputIO.SaveJson(b,"determinism.json",new{status="byte-identical",first=a,second=b,sha256=left.Sha256,size=left.Length,diff});
         Console.WriteLine("DETERMINISTIC sha256="+left.Sha256+" size="+left.Length); return 0;
     }
+    public static void ValidateComparisonReport(JsonElement r,FrozenBytes data)
+    {
+        Need(S(r,"schema")=="cc-data-font/v1" && S(r,"status")=="font-candidate-verified" &&
+            S(r,"sourceSha256")==NoopPolicy.SourceSha256 && S(r,"sourceSha256After")==NoopPolicy.SourceSha256 &&
+            S(r,"outputSha256")==data.Sha256 && N(r,"outputSize")==data.Length,"COMPARE_INTEGRITY");
+        var pins=r.GetProperty("bundle").GetProperty("files").EnumerateArray().ToArray();
+        Need(pins.Select(p=>S(p,"file")).Order().SequenceEqual(Pins.Keys.Order()),"COMPARE_BUNDLE_SET");
+        foreach(var p in pins) { var expected=Pins[S(p,"file")]; Need(N(p,"bytes")==expected.Size && S(p,"sha256")==expected.Hash,"COMPARE_BUNDLE_PIN"); }
+    }
     public static int Main(string[] args)
     {
-        try { if(args.SequenceEqual(new[]{"--build"})) return Build(); if(args.Length==3 && args[0]=="--compare") return Compare(args[1],args[2]); throw new GateRefusal("ARGUMENTS --build OR --compare <verified-release> <verified-release>; no -o"); }
+        try { if(args.SequenceEqual(new[]{"--verify-inputs"})) return VerifyInputs(); if(args.SequenceEqual(new[]{"--build"})) return Build(); if(args.Length==3 && args[0]=="--compare") return Compare(args[1],args[2]); throw new GateRefusal("ARGUMENTS --verify-inputs OR --build OR --compare <verified-release> <verified-release>; paths: CC_DATA_SOURCE, CC_GAME_ROOT, CC_OUTPUT_ROOT, CC_FONT_BUNDLE; no -o"); }
         catch(Exception e){Console.Error.WriteLine("BLOCKED "+e);return 2;}
     }
 }

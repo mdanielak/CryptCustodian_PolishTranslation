@@ -10,6 +10,91 @@ static class Tests
     static int count; static readonly List<string> passed=new();
     static void Test(string name,Action action) { action();count++;passed.Add(name);Console.WriteLine("OK "+name); }
     static void Reject(Action action) { try{action();}catch(Exception e) when(e is GateRefusal || e is InvalidDataException || e is OverflowException || e is IOException){return;} throw new Exception("Expected refusal"); }
+    static void Env(string name,string value,Action action)
+    {
+        string old=Environment.GetEnvironmentVariable(name);
+        try { Environment.SetEnvironmentVariable(name,value); action(); }
+        finally { Environment.SetEnvironmentVariable(name,old); }
+    }
+    static void WorkflowTests(string release)
+    {
+        string game=Path.Combine(release,"synthetic-game"), backup=Path.Combine(release,"synthetic-backup"), bundle=Path.Combine(release,"synthetic-bundle");
+        foreach(string root in new[]{game,backup,bundle}) Directory.CreateDirectory(root);
+        string source=Path.Combine(backup,"original.win");
+        using(var file=new FileStream(source,FileMode.CreateNew,FileAccess.Write,FileShare.None)) file.WriteByte(1);
+        Env("CC_GAME_ROOT",game,()=>Env("CC_DATA_SOURCE",source,()=>Env("CC_FONT_BUNDLE",bundle,()=>{
+            Test("backup source independent of absent active data.win",()=>Need(Source==source && !File.Exists(NoopPolicy.Source),"SOURCE_SELECTION"));
+            Test("backup does not change game or output root",()=>Need(NoopPolicy.GameRoot==game && NoopPolicy.TempRoot!=backup && ProtectedRoots.SequenceEqual(new[]{game,backup,bundle}),"ROOTS"));
+            Test("source fallback compatibility",()=>Env("CC_DATA_SOURCE",null,()=>Need(Source==Path.Combine(game,"data.win"),"SOURCE_FALLBACK")));
+            Test("game root still mandatory with backup",()=>Env("CC_GAME_ROOT",null,()=>Reject(()=>{_ = Source;})));
+            Test("wrong backup hash never falls back to game",()=>{
+                try {ReadSource();} catch(GateRefusal e) when(e.Message.StartsWith("SOURCE_SHA256")) {return;}
+                throw new Exception("Expected pinned source refusal");
+            });
+            foreach(string invalid in new[]{"relative.win",@"C:\backup\..\data.win",@"C:\backup\data.win:stream",@"\\server\share\data.win",@"C:\backup\NUL",@"C:\backup\data.win "})
+                Test("unsafe source path "+invalid,()=>Env("CC_DATA_SOURCE",invalid,()=>Reject(()=>{_ = Source;})));
+            foreach(string root in new[]{game,backup,bundle})
+            {
+                Test("reservation protects "+Path.GetFileName(root),()=>Env("CC_OUTPUT_ROOT",root,()=>{
+                    var before=Directory.GetFileSystemEntries(root);
+                    Reject(()=>OutputIO.Reserve("cc-data-font-"));
+                    Need(before.SequenceEqual(Directory.GetFileSystemEntries(root)),"REFUSAL_CREATED_RUN");
+                }));
+                Test("every write protects "+Path.GetFileName(root),()=>{
+                    string dir=Path.Combine(root,"release"); Directory.CreateDirectory(dir);
+                    string path=Path.Combine(dir,"probe.bin"); Reject(()=>OutputIO.WriteNew(path,s=>s.WriteByte(1)));
+                    Need(!File.Exists(path),"REFUSAL_WROTE_FILE");
+                });
+            }
+            Test("source byte unchanged after refusals",()=>Need(FrozenBytes.ReadFile(source).Span.SequenceEqual(new byte[]{1}),"SOURCE_MUTATED"));
+        })));
+        object Identity(string path,string hash=NoopPolicy.SourceSha256,int size=182801522)=>new{source=path,sourceSha256=hash,sourceBytes=size};
+        Test("historical bundle path is provenance not source identity",()=>ValidateSourceIdentity(System.Text.Json.JsonSerializer.SerializeToElement(Identity(@"C:\absent-historical-source\data.win"))));
+        Test("bundle source wrong SHA refused",()=>Reject(()=>ValidateSourceIdentity(System.Text.Json.JsonSerializer.SerializeToElement(Identity(Source,new string('0',64))))));
+        Test("bundle source wrong size refused",()=>Reject(()=>ValidateSourceIdentity(System.Text.Json.JsonSerializer.SerializeToElement(Identity(Source,size:1)))));
+        Test("bundle source unsafe provenance path refused",()=>Reject(()=>ValidateSourceIdentity(System.Text.Json.JsonSerializer.SerializeToElement(Identity("relative.win")))));
+        Test("provenance keeps actual and historical source separately",()=>{
+            var b=LoadBundle(); var before=b.Files["report.json"].ToArray();
+            Env("CC_DATA_SOURCE",source,()=>{
+                var p=System.Text.Json.JsonSerializer.SerializeToElement(Host.InputProvenance(b));
+                Need(S(p,"source")==source && S(p,"bundleSource")==S(b.Report,"source") && S(p,"gameRoot")==NoopPolicy.GameRoot,"PROVENANCE_PATHS");
+            });
+            Need(before.SequenceEqual(b.Files["report.json"]),"REPORT_REWRITTEN");
+        });
+        Test("comparison binds bytes and current bundle pins",()=>{
+            var bytes=FrozenBytes.CopyOf(new byte[]{1,2,3});
+            var report=System.Text.Json.Nodes.JsonNode.Parse(Json(new{
+                schema="cc-data-font/v1",status="font-candidate-verified",sourceSha256=NoopPolicy.SourceSha256,sourceSha256After=NoopPolicy.SourceSha256,
+                outputSha256=bytes.Sha256,outputSize=bytes.Length,bundle=new{files=Pins.Select(x=>new{file=x.Key,bytes=x.Value.Size,sha256=x.Value.Hash}).ToArray()}
+            }));
+            System.Text.Json.JsonElement Parse()=>FontBuilderCore.Parse(System.Text.Encoding.UTF8.GetBytes(report.ToJsonString()));
+            Host.ValidateComparisonReport(Parse(),bytes);
+            Reject(()=>Host.ValidateComparisonReport(Parse(),FrozenBytes.CopyOf(new byte[]{1,2,4})));
+            report["bundle"]["files"][0]["sha256"]="b84dff5861f1aa5804c379679aa99b15970e1dcb4e2da75722ff6f3a5d528daf";
+            Reject(()=>Host.ValidateComparisonReport(Parse(),bytes));
+        });
+        Test("verify inputs accepts no output or bypass flags",()=>Need(Host.Main(new[]{"--verify-inputs","--skip-hash"})==2,"VERIFY_ARGS"));
+        var pinned=LoadBundle();
+        foreach(string mutation in new[]{"none","report.json","Nerko.rgba","extra","missing"})
+        {
+            Test("real bundle relocation/tamper gate "+mutation,()=>{
+                string copy=Path.Combine(release,"bundle-"+mutation); Directory.CreateDirectory(copy);
+                foreach(var entry in pinned.Files)
+                {
+                    if(mutation=="missing" && entry.Key=="manifest.json") continue;
+                    byte[] bytes=entry.Value.ToArray(); if(entry.Key==mutation) bytes[^1]^=1;
+                    using var file=new FileStream(Path.Combine(copy,entry.Key),FileMode.CreateNew,FileAccess.Write,FileShare.None); file.Write(bytes);
+                }
+                if(mutation=="extra") {using var file=new FileStream(Path.Combine(copy,"unexpected.bin"),FileMode.CreateNew,FileAccess.Write,FileShare.None);file.WriteByte(1);}
+                Env("CC_FONT_BUNDLE",copy,()=>{if(mutation=="none") LoadBundle(); else Reject(()=>LoadBundle());});
+            });
+        }
+        Test("verify inputs wrong source creates no output",()=>Env("CC_GAME_ROOT",game,()=>Env("CC_DATA_SOURCE",source,()=>{
+            var before=Directory.GetFileSystemEntries(NoopPolicy.TempRoot);
+            Need(Host.Main(new[]{"--verify-inputs"})==2,"VERIFY_BAD_SOURCE");
+            Need(before.SequenceEqual(Directory.GetFileSystemEntries(NoopPolicy.TempRoot)),"VERIFY_RESERVED_OUTPUT");
+        })));
+    }
     static IEnumerable<(ushort Code,int W,int H)> Sizes(int w=12,int h=20)=>Enumerable.Range(0,16).Select(i=>((ushort)(0x100+i),w,h));
     static GraphSnapshot Snap(object x)=>GraphSnapshot.Capture(new[]{new GraphRoot("test",x)},new[]{typeof(UndertaleData).Assembly,System.Reflection.Assembly.Load("Underanalyzer")});
     static int Int(byte[] b,int p)=>System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(b.AsSpan(p,4));
@@ -116,6 +201,7 @@ static class Tests
         string release=OutputIO.Reserve("cc-data-font-tests-");
         try
         {
+            WorkflowTests(release);
             StrgTests();
             Test("source wrong hash",()=>Reject(()=>FrozenBytes.CopyOf(new byte[]{1}).RequireHash(NoopPolicy.SourceSha256)));
             Test("bundle changed byte",()=>Reject(()=>Pin(new byte[]{2},1,FrozenBytes.Hash(new byte[]{1}))));
@@ -169,6 +255,31 @@ static class Tests
             Test("Unicode UTF8 manifest roundtrip",()=>{var b=LoadBundle();Need(FontBuilderCore.Text(b.Manifest,"required")=="ąćęłńóśźżĄĆĘŁŃÓŚŹŻ","UNICODE");});
             // Real bundle, synthetic old crops: complete placement/copy coverage without game parsing.
             var bundle=LoadBundle();
+            Test("bundle lowercase optical metrics allow overhang; uppercase unchanged",()=>{
+                int[] lower={9,23,20,7},upper={19,52,46,16};
+                int[] lowerOffset={-4,-7,-6,-4},upperOffset={-6,-9,-10,-6};
+                for(int i=0;i<4;i++) foreach(char c in "łŁ")
+                {
+                    var m=bundle.Manifest.GetProperty("fonts")[i]; var atlas=m.GetProperty("atlas");
+                    var g=m.GetProperty("glyphs").EnumerateArray().Single(g=>S(g,"character")==c.ToString());
+                    var pixels=Crop(bundle.Files[S(atlas,"file")],N(atlas,"width"),N(atlas,"height"),N(g,"x"),N(g,"y"),N(g,"width"),N(g,"height"));
+                    int right=Enumerable.Range(0,N(g,"width")*N(g,"height")).Where(p=>pixels[4*p+3]>0).Max(p=>p%N(g,"width"))+1+N(g,"offset");
+                    var basis=bundle.Report.GetProperty("provenance")[i].GetProperty("donorsAndBases").EnumerateArray().Single(d=>S(d,"character")== (c=='ł'?"l":"L")).GetProperty("model");
+                    if(c=='ł')
+                    {
+                        double em=bundle.Report.GetProperty("provenance")[i].GetProperty("metrics").GetProperty("EmSize").GetDouble();
+                        int unit=Math.Max(1,(int)Math.Floor(em/32+0.5));
+                        Need(N(g,"shift")==N(basis,"Shift")+unit && N(g,"shift")<right,"LOWERCASE_OVERHANG");
+                    }
+                    else Need(N(g,"shift")==Math.Max(N(basis,"Shift"),right+1),"UPPERCASE_UNCHANGED");
+                    Need(N(g,"shift")== (c=='ł'?lower[i]:upper[i]) && N(g,"offset")== (c=='ł'?lowerOffset[i]:upperOffset[i]),"STROKE_METRICS");
+                }
+            });
+            Test("bundle provenance rejects changed metric",()=>{
+                var node=System.Text.Json.Nodes.JsonNode.Parse(bundle.Manifest.GetRawText());
+                node["fonts"][0]["glyphs"][0]["shift"]=1;
+                Reject(()=>ValidateBundleContent(bundle with{Manifest=FontBuilderCore.Parse(System.Text.Encoding.UTF8.GetBytes(node.ToJsonString()))}));
+            });
             for(int i=0;i<4;i++)
             {
                 int f=i; Test("bundle layout "+Names[f],()=>{var m=bundle.Manifest.GetProperty("fonts")[f];var l=Pack(OldSize[f].W,OldSize[f].H,m.GetProperty("glyphs").EnumerateArray().Select(g=>((ushort)S(g,"character")[0],N(g,"width"),N(g,"height"))));Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new{font=Names[f],layout=l}));});

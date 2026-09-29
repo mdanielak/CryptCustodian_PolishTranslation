@@ -383,7 +383,24 @@ public static class FontAtlasCore
         int h = Math.Max(basis.Image.H, points.Max(p => p.y) + 1);
         Need(points.Min(p => p.y) >= 0 && h <= maxHeight && w <= 512, "MARK_OUTSIDE_FONT_ENVELOPE");
         int offset = checked(basis.Offset + left);
-        int shift = stroke ? Math.Max(basis.Shift, checked(offset + w + 1)) : basis.Shift;
+        int shift = basis.Shift;
+        if (character == 'ł')
+        {
+            // Optical spacing, independent of the slash's alpha edge/canvas.
+            // Move the WHOLE unchanged bitmap in pen space; allow stroke overhang.
+            // One 1/32-em unit, round-half-up to signed integer FONT metrics.
+            int optical = Math.Max(1, (int)Math.Floor(emSize / 32.0 + 0.5));
+            offset = checked(offset + optical);
+            shift = checked(basis.Shift + optical);
+        }
+        else if (stroke)
+        {
+            // Exclusive alpha edge in pen coordinates (including AA=1), not canvas padding.
+            // Base-wins overlay preserves the union of base and mark alpha. Keep one empty
+            // pixel before the next pen, consuming existing advance before expanding it.
+            int right = checked(basis.Offset + Math.Max(b.x + b.w, points.Max(p => p.x) + 1));
+            shift = Math.Max(basis.Shift, checked(right + 1));
+        }
         Need(offset >= short.MinValue && offset <= short.MaxValue && shift <= short.MaxValue, "METRICS_RANGE");
         Need(!stroke || shift - basis.Shift <= Math.Max(1, (int)Math.Floor(emSize) / 2), "STROKE_ADVANCE_EXPANSION");
         var pixels = new byte[w * h * 4];
