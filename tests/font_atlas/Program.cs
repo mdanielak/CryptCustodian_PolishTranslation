@@ -234,6 +234,48 @@ internal static class Program
             var result = FontAtlasCore.Compose('ł', basis, Slash(), "/", 24).Glyph;
             Assert(result.Offset < 0 && result.Image.W > basis.Image.W); BasePreserved(basis, result, 1, basis.Shift + 1);
         });
+        Test("ł/Ł variant B freezes geometry parameters and keeps accepted metrics", () => {
+            var basis = Glyph('l', Pixels(6, 40, (x, y) => x >= 1 && x <= 4 && y >= 4 && y <= 35), 0, 8);
+            var lower = FontAtlasCore.Compose('ł', basis, Slash(), "/", 40, 64);
+            var upper = FontAtlasCore.Compose('Ł', Glyph('L', basis.Image, 0, 8), Slash(), "/", 40, 64);
+            var provenance = JsonSerializer.SerializeToElement(lower.Provenance).GetProperty("donorTransform").GetProperty("transform");
+            Assert(provenance.GetProperty("targetDegrees").GetDouble() == 21.0);
+            Assert(provenance.GetProperty("lengthFactor").GetDouble() == 0.82 && provenance.GetProperty("transverseScale").GetDouble() == 0.9);
+            Assert(basis.Offset == 0 && basis.Shift == 8);
+            Assert(lower.Glyph.Shift == basis.Shift + 2 && upper.Glyph.Shift >= 8);
+        });
+        Test("variant B colored AA base OVER slash and mutation-sensitive preservation gates", () => {
+            var image = Pixels(6, 40, (x, y) => x >= 1 && x <= 4 && y >= 4 && y <= 35);
+            for (int y = 4; y <= 35; y++) foreach (int x in new[] { 1, 4 })
+            {
+                int i = (y * image.W + x) * 4;
+                image.Pixels[i] = 17; image.Pixels[i + 1] = 231; image.Pixels[i + 2] = 42; image.Pixels[i + 3] = 96;
+            }
+            var basis = Glyph('l', image, 0, 8);
+            var result = FontAtlasCore.Compose('ł', basis, Slash(), "/", 40, 64);
+            DonorDumpTests.VerifyLStrokeComposition(basis, result);
+            var mark = result.StrokeMark;
+            int outside = -1, opaque = -1, aa = -1;
+            for (int y = 0; y < image.H; y++) for (int x = 0; x < image.W; x++)
+            {
+                int rx = x + result.StrokeBaseX, ry = y + result.StrokeBaseY;
+                int mx = rx - result.StrokeX, my = ry - result.StrokeY;
+                bool footprint = mx >= 0 && my >= 0 && mx < mark.W && my < mark.H && mark.Ink(mx, my);
+                int alpha = image.Pixels[(y * image.W + x) * 4 + 3], ri = (ry * result.Glyph.Image.W + rx) * 4;
+                if (!footprint && alpha == 96) outside = ri;
+                if (footprint && alpha == 255) opaque = ri;
+                if (footprint && alpha == 96) aa = ri;
+            }
+            Assert(outside >= 0 && opaque >= 0 && aa >= 0, "mutation coverage");
+            foreach (var change in new[] { (outside, "DUMP_BASE_OUTSIDE_STROKE_CHANGED"), (opaque, "DUMP_OPAQUE_BASE_CHANGED"),
+                (aa, "DUMP_BASE_OVER_SLASH_RGB"), (aa + 3, "DUMP_BASE_OVER_SLASH_ALPHA") })
+            {
+                result.Glyph.Image.Pixels[change.Item1] ^= 1;
+                Refuse(() => DonorDumpTests.VerifyLStrokeComposition(basis, result), change.Item2);
+                result.Glyph.Image.Pixels[change.Item1] ^= 1;
+            }
+            DonorDumpTests.VerifyLStrokeComposition(basis, result);
+        });
         Test("narrow l retains slash AA, safe canvas and metrics", () => {
             var basis = Glyph('l', Pixels(6, 40, (x, y) => x >= 1 && x <= 4 && y >= 4 && y <= 35), 0, 8);
             var mark = Slash();
@@ -245,6 +287,19 @@ internal static class Program
             var again = FontAtlasCore.Compose('ł', basis, mark, "/", 40, 40).Glyph;
             Assert(again.Offset == result.Offset && again.Shift == result.Shift && again.Image.Pixels.SequenceEqual(result.Image.Pixels));
         });
+        foreach (int threshold in new[] { 16, 32, 64, 128 })
+            Test("threshold connectivity permits inherited fringe, rejects stroke-only island at " + threshold, () => {
+                var basis = Glyph('l', Pixels(7, 3, (x, y) => y == 1 && (x == 1 || x == 3)));
+                basis.Image.Pixels[(1 * 7 + 2) * 4 + 3] = 1;
+                var image = new B(7, 3, basis.Image.Pixels);
+                image.Pixels[(1 * 7 + 4) * 4 + 3] = (byte)(threshold - 1);
+                image.Pixels[(1 * 7 + 5) * 4 + 3] = (byte)(threshold - 1);
+                var result = new FontAtlasCore.Composed { Glyph = Glyph('ł', image) };
+                // Two inherited components at high thresholds are valid, not repaired.
+                DonorDumpTests.VerifyThresholdConnectivity(basis, result);
+                image.Pixels[(1 * 7 + 5) * 4 + 3] = (byte)threshold;
+                Refuse(() => DonorDumpTests.VerifyThresholdConnectivity(basis, result), "DUMP_LSTROKE_THRESHOLD_CONNECTIVITY threshold=" + threshold);
+            });
         foreach (char c in "łŁ")
         {
             Test("lowercase optical spacing / unchanged uppercase alpha-edge spacing " + c, () => {
@@ -261,7 +316,7 @@ internal static class Program
                 var g = result.Glyph; var bounds = FontAtlasCore.Bounds(g.Image);
                 int right = g.Offset + bounds.x + bounds.w;
                 int oldAdvance = Math.Max(basis.Shift, g.Offset + g.Image.W + 1);
-                Assert(right == (upper ? 13 : 12) && oldAdvance == (upper ? 18 : 19), "fixture geometry changed");
+                Assert(right >= basis.Offset + 1 && oldAdvance == (upper ? 18 : 19), "accepted envelope changed");
                 Assert(g.Shift == (upper ? 14 : 9), "unexpected exact advance: " + g.Shift);
                 Assert(g.Offset == (upper ? -2 : -1) && g.Image.W == 19 && g.Image.H == 24, "canvas/bearing changed");
                 Assert(g.Shift < oldAdvance, "transparent canvas still inflates advance");

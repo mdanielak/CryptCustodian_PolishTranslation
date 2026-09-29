@@ -96,6 +96,76 @@ Offset+u/bazowy Shift, **rekomendowany F: Offset+u/Shift(l)+u**.
 Kolumny: `Obudził/aś się!`, `ił/`, `lł`, `łl`, `ł/a` dla wszystkich 4 fontów.
 Podgląd nie jest testem renderowania GameMaker ani akceptacją użytkownika.
 
+### Wybrana kreska ł/Ł, wariant B — 2026-09-29
+
+`FontAtlasCore` deterministycznie odtwarza wybrany wariant B z donora `/`, bez
+kopiowania gotowych bitmap: `targetDegrees=21.0`,
+`referenceLength*0.82` oraz `transverseScale=0.90`. `referenceLength` nadal
+jest recepturą v3: `max(6, min(3*stem, Shift+2*ceil(thickness/2)),
+floor(baseInkHeight/3))`. Punkt pionowy jest środkiem oryginalnego pnia;
+spośród dwóch najbliższych położeń całkowitych wybierane jest to o najmniejszej
+różnicy wystającej masy alfa po lewej i prawej (potem odległość od środka,
+potem mniejsze X). Korpus jest nakładany **OVER** kreski: nie zmienia pikseli
+nieprzezroczystych, a przecięcia z AA są kompozytowane dokładnie w całkowitej
+arytmetyce alfa.
+
+`Offset` i `Shift` pozostają dokładnie kontraktem korekty optycznej powyżej;
+wariant B zmienia tylko osiem bitmap `ł/Ł`. Pełny donor-dump zawsze wymaga
+wszystkich ośmiu niezmiennych SHA-256 B; `--baseline-bundle` dodatkowo sprawdza
+metryki, wymiary i punkt bazowy względem przypiętego bundle korekty optycznej.
+Pozostałe 56 dodatków musi być identycznych z baseline. Nie jest to build
+writera ani test gry.
+
+#### Parzystość Python/C# i bramy regresji
+
+Źródło prawdy: `cc-lstroke-ABC-wpzr214m/make_previews.py` i `manifest.json`
+pod zewnętrznym temp wskazanym niżej. Nie kopiujemy plików gotowych glifów.
+Pierwsza rozbieżność w zastanym kodzie była w transformacji: dwukrotne `*0.82`.
+Dla Nerko ł `axisScale=0.39354260593676565` zamiast `0.47993000723995816`;
+kreska 13×9 zamiast 15×10, piksel (8,0) RGBA `(255,255,255,2)` zamiast zera.
+Po usunięciu drugiego mnożenia wszystkie osiem kresek (wraz z AA i trimem)
+było bajtowo zgodnych. Nie zmieniano floating-point ani samplera area.
+Drugi błąd: nowa kreska zmniejszała canvas i zmieniała bearing. B zachowuje
+canvas v3: wyliczamy jego obwiednię ponownie z donora przy oryginalnych
+parametrach 30°/scale/1.0 i oryginalnym dzieleniu całkowitym, wyłącznie dla
+canvasu oraz metryk. Raster B nadal powstaje bezpośrednio z donora jednym
+przebiegiem area. Anchor/tie-break i integer base OVER były zgodne.
+
+Regresja zamiast bezwarunkowego `DUMP_BASE_CHANGED` dla ł/Ł wymaga:
+
+- wszystkich czterech kanałów bazy bez zmian poza footprintem **alpha>0**
+  kreski, również ukrytego RGB; całej opaque base bez zmian;
+- dla AA intersection `N=ba*255+ma*(255-ba)`, alfa `(N+127)/255`,
+  RGB `(bc*ba*255+mc*ma*(255-ba)+N/2)/N` — wyłącznie dzielenie całkowite;
+- dodatnich występów po obu stronach pnia, różnicy długości ≤1 px,
+  względnej nierównowagi mas alfa ≤0.25, marginesów i oryginalnego środka pnia;
+- 8-spójności kreski przy alpha≥1 i ≥128, wyniku przy ≥1, silnego
+  przecięcia baza/kreska przy ≥128; przy progach 16/32/64/128 każda składowa
+  wyniku zawiera oryginalną bazę na tym samym progu. Dziedziczone AA bazy
+  nie jest usuwane, aby sztucznie wymusić jedną składową;
+- dotychczasowego `DUMP_BASE_CHANGED` dla znaków innych niż ł/Ł.
+
+Przywrócono też pierwotną bramę kierunku kreski (różnica centroidów ≥1,
+nie robocze ≥0.25) i dokładne syntetyczne asercje canvasu/Offset/Shift.
+Test kolorowego AA i mutacje o 1 bit wykrywają uszkodzenie każdej z trzech
+klas ochrony bazy; cztery testy negatywne odróżniają dziedziczone składowe
+od odłączonej kreski na poszczególnych progach.
+
+Dowody: `C:\Users\mdani\AppData\Local\Temp\opencode\cc-lstroke-parity-20260929-01`.
+`initial/` i `scale-only/` dokumentują błędy; `synthetic/runner.log` oraz
+`final-donor/runner.log` zawierają końcowe wyniki **239/239** i **304/304**.
+`final-donor/parity.json`: osiem identycznych bitmap i kresek Python/C#,
+metryki, położenia, masy alfa, silne przecięcia i rozmiary składowych zgodne
+z manifestem B. `execution.json` w każdym przebiegu zawiera dokładne argv
+istniejącego runnera .NET, kod wyjścia i osobny `--artifacts-path`;
+`sources.json` przypina testowane źródła. Baseline:
+`cc-spacing-verified-lolo8ojv/cc-font-atlas-007/release/atlas-001`.
+Testy obejmują dotychczasowy round-trip RGBA/pack/UTF-8 oraz kompilację CSX
+bez wykonania. Nie uruchamiano UMT generatora, writera, gry ani instalacji;
+nie aktualizowano pinów writera. Parzystość zweryfikowano na Windows x64,
+.NET SDK 10.0.401 i Python 3.14.7; inne platformy/runtime wymagają tych samych
+bram hashy, a wygląd w grze nadal osobnego testu runtime.
+
 Artefakty poza repo pod `C:\Users\mdani\AppData\Local\Temp\opencode`:
 
 - `cc-spacing-preview-libcu7zp/index.html`, 4 `Nerko*.png`, `metrics.json`;
@@ -347,3 +417,70 @@ artefaktów, a nie część testów ani zwykłego builda.
 
 Sprawdzamy m.in. 18 polskich liter, brak normalizacji, UTF-8/CRLF, round-trip
 INI/pikseli/ZIP, tokeny, no-clobber, przypięte hashe i odmowy niebezpiecznych ścieżek.
+
+### Końcowa walidacja dwóch bundle atlasu — 2026-09-29
+
+Niezależny verifier no-clobber: `C:\Users\mdani\AppData\Local\Temp\opencode\cc-font-atlas-final-verification-20260929-001\final-verification.json`. Zweryfikowano oba bundle:
+
+- `C:\Users\mdani\AppData\Local\Temp\opencode\cc-font-atlas-integration-20260929-001\release\atlas-001`;
+- `C:\Users\mdani\AppData\Local\Temp\opencode\cc-font-atlas-integration-20260929-002\release\atlas-001`.
+
+Oba przebiegi UMT: kod 0 i marker `ATLAS_BUNDLE_READBACK_OK`. Backup źródłowy: 182801522 bajty, SHA-256 `15e2c8ef57f4c5f599589b5d15021281a11b73757be54d0bbf739d57dd280b99`.
+
+Kontrakt jest spełniony: `required` ma 18 polskich liter, ale każdy z 4 fontów zawiera celowo tylko 16 nowych glifów atlasu; `ó` i `Ó` są zachowane w źródłowym `data.win` i raporty oznaczają je jako `preserved`. Zatem `4 * (16 nowych + ó/Ó zachowane) = 18/18`, a nowych cropów jest 64. Wszystkie 16 prostokątów/font mają przezroczyste jednопikselowe guttery, nie kolidują, mają niepustą alfę, poprawne RGBA8/SHA; `textureDiagnostics.reasons` jest puste.
+
+Wszystkie 8 cropów ł/Ł są bitmapowo zgodne z wariantem B z `C:\Users\mdani\AppData\Local\Temp\opencode\cc-lstroke-ABC-wpzr214m\manifest.json`, wraz z metrykami: Nerko Ł 24×43/-6/19, ł 19×43/-4/9; NerkoLarge Ł 58×120/-9/52, ł 39×120/-7/23; NerkoLarge2 Ł 53×107/-10/46, ł 34×107/-6/20; NerkoSmall Ł 21×37/-6/16, ł 17×37/-4/7 (w×h/Offset/Shift). Pozostałe 56 niestroke nowych glifów są byte-identical bitmapowo i metrycznie z baseline `C:\Users\mdani\AppData\Local\Temp\opencode\cc-spacing-verified-lolo8ojv\cc-font-atlas-007\release\atlas-001`.
+
+Deterministyczność: `manifest.json` i wszystkie 4 atlasy RGBA są byte-identical w obu bundle; zdekodowane `report.json` są identyczne po usunięciu wyłącznie `requestSha256`.
+
+Wybrany bundle 001 — rzeczywiste rozmiary i SHA-256:
+
+| Plik | Bajty | SHA-256 |
+| --- | ---: | --- |
+| `manifest.json` | 15394 | `f9374aca5971bc9a4bda50b904802c29a9beca794e54d9038f2dcf292f322cfa` |
+| `report.json` | 170447 | `e700d721279e24080b6f07f5f174ec2cad06a2057f469c6ffa3d80b4ad6c3d3d` |
+| `Nerko.rgba` | 184320 | `2214e509588c3c0396c8b257227fdcf2a62d2962c1291c8e7541d2da38206552` |
+| `NerkoLarge.rgba` | 499712 | `18b2a1c1a3a5d086deed190c1f016d049b6a78db1422765433d13ef282d76aa9` |
+| `NerkoLarge2.rgba` | 446464 | `9932e727638c1393fb98ddc4dff1e7d75a26f1cd01256c6a42bbb7dd9762e515` |
+| `NerkoSmall.rgba` | 159744 | `e87f45966b34a846fbb725816b7065007d59d241065061295c52f41d967ecfaf` |
+
+To wyłącznie odczytowa walidacja kandydata atlasu. W chwili tej walidacji
+`data.win` nie zbudowano ani nie instalowano oraz nie uruchamiano gry.
+
+### Adaptacja writera do zweryfikowanego wariantu B — 2026-09-29
+
+Writer przyjmuje wyłącznie pierwszy deterministyczny bundle zweryfikowany przez
+`cc-font-atlas-final-verification-20260929-001`:
+`C:\Users\mdani\AppData\Local\Temp\opencode\cc-font-atlas-integration-20260929-001\release\atlas-001`.
+Zmieniono tylko kontrakt stałych wejść w `data_font_core.cs`; istniejące bramy
+zbioru sześciu plików, rozmiaru i SHA-256 nadal odrzucają poprzedni lub zmieniony
+bundle. Nie ma auto-pinowania ani pomijania hashy. Pin oryginalnego `data.win`
+pozostaje `15e2c8ef57f4c5f599589b5d15021281a11b73757be54d0bbf739d57dd280b99`
+(182801522 bajty).
+
+| Plik | Bajty | SHA-256 |
+| --- | ---: | --- |
+| `manifest.json` | 15394 | `f9374aca5971bc9a4bda50b904802c29a9beca794e54d9038f2dcf292f322cfa` |
+| `report.json` | 170447 | `e700d721279e24080b6f07f5f174ec2cad06a2057f469c6ffa3d80b4ad6c3d3d` |
+| `Nerko.rgba` | 184320 | `2214e509588c3c0396c8b257227fdcf2a62d2962c1291c8e7541d2da38206552` |
+| `NerkoLarge.rgba` | 499712 | `18b2a1c1a3a5d086deed190c1f016d049b6a78db1422765433d13ef282d76aa9` |
+| `NerkoLarge2.rgba` | 446464 | `9932e727638c1393fb98ddc4dff1e7d75a26f1cd01256c6a42bbb7dd9762e515` |
+| `NerkoSmall.rgba` | 159744 | `e87f45966b34a846fbb725816b7065007d59d241065061295c52f41d967ecfaf` |
+
+Regresja writera nadal odczytuje przypięty bundle, sprawdza odrzucenie
+relokowanych/mutowanych zestawów plików oraz metryki wariantu B ł/Ł. `tools/data_font/Program.cs`
+nie wymagał zmiany: raportowanie i `--compare` czerpią piny bezpośrednio z
+`FontWriter.Pins`.
+### Dwa buildy i instalacja wariantu B — 2026-09-29
+
+Po jawnej zgodzie użytkownika wykonano dwa niezależne buildy z przypiętego oryginalnego backupu, a następnie instalację **wyłącznie `data.win`**. Nie uruchamiano ponownie buildu ani instalatora przy tej dokumentacji. Raport no-clobber: `C:\Users\mdani\AppData\Local\Temp\opencode\cc-data-font-b-final-report-20260929-001\report.json`.
+
+Kandydaci `cc-data-font-b-build-20260929-001\cc-data-font-001\release` i `...\cc-data-font-002\release` mają status `font-candidate-verified`, `readbackOk=true`, identyczny rozmiar **183020738 B** i SHA-256 `6ec2a376367df0832aea144f48e5b8928bc3e3cb466615bb97b2bdf51c477f1b`. `cc-data-font-002\release\determinism.json` potwierdza `byte-identical`: `ChangedBytes=0`, `RangeCount=0`, `SameSize=true`. Aktywny `F:\SteamLibrary\steamapps\common\Crypt Custodian\data.win` został ponownie odczytany po instalacji i ma ten sam rozmiar oraz SHA-256.
+
+Instalacja zapisała no-clobber backup `C:\Users\mdani\AppData\Local\Temp\opencode\cc-data-font-b-active-backup-20260929-003\data.win`: **183021330 B**, SHA-256 `edffc0eb9aea564d879b5719187465aef84a566e215b19abcdf93445b19a9edd`; `manifest.json` wiąże oba stany. Ewentualny rollback (nie był wykonywany na realnej grze) wymaga zamkniętej gry i dokładnie:
+
+```powershell
+powershell.exe -NoProfile -File 'C:\Users\mdani\AppData\Local\Temp\opencode\cc-data-font-b-install-20260929-003\install-data-only.ps1' -Mode Rollback
+```
+
+Installer używa mutexu, backupu ze sprawdzeniem hashy, stagingu na woluminie gry oraz atomowego `File.Replace`; test fixture instalatora przeszedł **9/9**. Po instalacji ponownie sprawdzono ochronę: `translations.ini` (758832 B, `deeda976d7bf414bce0fe1af7d0f9719efa990bb83d4c956f989dfc886dc055f`), `CryptCustodian.exe` (36046848 B, `252277ea55574e67877fe20fd4532ff97b6bc75dc514605593c6788b1fa9c0a0`) oraz istniejący `CryptCustodian-PL-test-001.zip` (472539630 B, `a12ef4bde624e0a93fda2afc1d413b4555e226af88d1c9bed4bf87d363910643`). Nie zmieniono `translations.ini`, EXE ani ZIP; nie budowano paczki. Gra nie została uruchomiona, dlatego `runtimeValidated=false`: odbiór wizualny pozostaje osobnym testem runtime użytkownika.

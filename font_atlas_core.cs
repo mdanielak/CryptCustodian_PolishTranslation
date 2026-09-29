@@ -7,6 +7,10 @@ using System.Text.Json;
 public static class FontAtlasCore
 {
     public const string Recipe = "existing-pixels/v3";
+    // Chosen offline variant B. These values are part of the deterministic ł/Ł contract.
+    public const double LStrokeDegrees = 21.0;
+    public const double LStrokeLengthFactor = 0.82;
+    public const double LStrokeTransverseScale = 0.90;
     public static readonly string[] Names = { "Nerko", "NerkoLarge", "NerkoLarge2", "NerkoSmall" };
     public sealed class Bitmap
     {
@@ -31,6 +35,12 @@ public static class FontAtlasCore
     {
         public Glyph Glyph;
         public object Provenance;
+        // In-memory evidence for the donor-dump regression.  This is deliberately
+        // not serialized into the production provenance: it lets the test inspect
+        // the exact transformed slash and its placement without weakening the
+        // compact, stable release receipt.
+        public Bitmap StrokeMark;
+        public int StrokeX, StrokeY, StrokeBaseX, StrokeBaseY;
     }
     public static void Need(bool value, string code) => FontBuilderCore.Require(value, code);
     public static Bitmap FromBgra(int width, int height, byte[] bgra)
@@ -278,6 +288,8 @@ public static class FontAtlasCore
         var b = Bounds(basis.Image);
         var points = new List<(int x, int y, int pixel)>();
         string operation; object geometry; object donorTransform = null;
+        int strokeX = 0, strokeY = 0;
+        int referenceStrokeLeft = 0, referenceStrokeRight = 0;
         bool above = "ćńśźżĆŃŚŹŻ".Contains(character);
         if (above)
         {
@@ -326,7 +338,7 @@ public static class FontAtlasCore
             }
             else
             {
-                operation = "slash-axis-compress-rotate-area-base-wins";
+                operation = "slash-axis-compress-rotate-area-base-over";
                 Need(b.h >= 6, "STROKE_BASE_TOO_SHORT");
                 Need(float.IsFinite(emSize) && emSize >= 6 && emSize <= 512 && basis.Shift > 0, "STROKE_METRICS");
                 int em = (int)Math.Floor(emSize), mid = b.y + b.h / 2;
@@ -357,20 +369,48 @@ public static class FontAtlasCore
                 int length = Math.Max(6, Math.Max(Math.Min(3 * stem, basis.Shift + 2 * radius), b.h / 3));
                 Need(length <= b.h && length <= em && length <= basis.Shift + 2 * radius,
                     "STROKE_TOO_LONG");
-                double scale = Math.Min(1, length / axis), vx = 0.8660254037844386, vy = -0.5;
+                double referenceScale = Math.Min(1, length / axis);
+                // B was drawn on the accepted v3 canvas, with its bearing/advance.
+                // Derive that envelope from the donor, never from stored bitmaps or
+                // per-font constants. Preserve v3's truncating integer placement.
+                var referenceMark = AreaTransform(tight, (x, y) => {
+                    double along = (x * ux + y * uy) * referenceScale, across = -x * uy + y * ux;
+                    return (along * 0.8660254037844386 - across * -0.5, along * -0.5 + across * 0.8660254037844386);
+                });
+                referenceStrokeLeft = stemX + (stem - referenceMark.W) / 2;
+                referenceStrokeRight = referenceStrokeLeft + referenceMark.W;
+                double scale = referenceScale * LStrokeLengthFactor;
+                double vx = Math.Cos(LStrokeDegrees * Math.PI / 180.0), vy = -Math.Sin(LStrokeDegrees * Math.PI / 180.0);
                 mark = AreaTransform(tight, (x, y) => {
-                    double along = (x * ux + y * uy) * scale, across = -x * uy + y * ux;
+                    double along = (x * ux + y * uy) * scale, across = (-x * uy + y * ux) * LStrokeTransverseScale;
                     return (along * vx - across * vy, along * vy + across * vx);
                 });
                 ValidateStroke(mark);
-                x0 = stemX + (stem - mark.W) / 2; y0 = mid - mark.H / 2;
+                // Anchor at the original stem centre.  Of its two nearest integral
+                // placements, select the one with the smallest protruding alpha-mass
+                // imbalance; the remaining tuple fields make ties deterministic.
+                double idealX = (2.0 * stemX + stem - mark.W) / 2.0;
+                var choices = new[] { (int)Math.Floor(idealX), (int)Math.Ceiling(idealX) }.Distinct().Select(mx => {
+                    long leftMass = 0, rightMass = 0;
+                    for (int yy = 0; yy < mark.H; yy++) for (int xx = 0; xx < mark.W; xx++)
+                    {
+                        int alpha = mark.Pixels[(yy * mark.W + xx) * 4 + 3];
+                        if (mx + xx < stemX) leftMass += alpha;
+                        if (mx + xx >= stemX + stem) rightMass += alpha;
+                    }
+                    double imbalance = (double)Math.Abs(leftMass - rightMass) / (leftMass + rightMass);
+                    return (imbalance, distance: Math.Abs(mx - idealX), mx, leftMass, rightMass);
+                }).OrderBy(c => c.imbalance).ThenBy(c => c.distance).ThenBy(c => c.mx).First();
+                x0 = choices.mx; y0 = mid - mark.H / 2;
                 geometry = new { length, mid, thickness, radius, stem, stemX, x = x0, y = y0, emSize };
-                transform = new { kind = "axis-compress-rotate-area/v1", ux, uy, axisScale = scale, transverseScale = 1, targetDegrees = 30, vx, vy };
+                transform = new { kind = "axis-compress-rotate-area/v1", ux, uy, axisScale = scale, transverseScale = LStrokeTransverseScale, targetDegrees = LStrokeDegrees, vx, vy,
+                    lengthFactor = LStrokeLengthFactor };
             }
             donorTransform = new { donorCode = hook ? 0x002C : 0x002F, donorUnicode = hook ? "U+002C" : "U+002F",
                 donorRgbaSha256 = FontBuilderCore.Hash(source.Pixels), crop = new { x = crop.x, y = crop.y, width = crop.w, height = crop.h },
                 cropRgbaSha256 = FontBuilderCore.Hash(tight.Pixels), transform,
                 sampling = "single-pass-exact-cell-area-premultiplied-to-straight-round-half-up", transparentTrimOnly = true };
+            if (!hook) { strokeX = x0; strokeY = y0; }
             for (int y = 0; y < mark.H; y++) for (int x = 0; x < mark.W; x++)
                 if (mark.Ink(x, y)) points.Add((x0 + x, y0 + y, y * mark.W + x));
             if (!hook) Need(points.Min(p => p.y) >= b.y + 1 && points.Max(p => p.y) < b.y + b.h - 1, "STROKE_CLIPPING");
@@ -380,6 +420,12 @@ public static class FontAtlasCore
         bool stroke = "łŁ".Contains(character);
         int left = Math.Min(0, points.Min(p => p.x) - (stroke ? 1 : 0));
         int w = Math.Max(basis.Image.W, points.Max(p => p.x) + 1 + (stroke ? 1 : 0)) - left;
+        if (stroke)
+        {
+            left = Math.Min(0, referenceStrokeLeft - 1);
+            w = Math.Max(basis.Image.W, referenceStrokeRight + 1) - left;
+            Need(strokeX >= left + 1 && strokeX + mark.W <= left + w - 1, "STROKE_CANVAS_CLIPPING");
+        }
         int h = Math.Max(basis.Image.H, points.Max(p => p.y) + 1);
         Need(points.Min(p => p.y) >= 0 && h <= maxHeight && w <= 512, "MARK_OUTSIDE_FONT_ENVELOPE");
         int offset = checked(basis.Offset + left);
@@ -395,10 +441,8 @@ public static class FontAtlasCore
         }
         else if (stroke)
         {
-            // Exclusive alpha edge in pen coordinates (including AA=1), not canvas padding.
-            // Base-wins overlay preserves the union of base and mark alpha. Keep one empty
-            // pixel before the next pen, consuming existing advance before expanding it.
-            int right = checked(basis.Offset + Math.Max(b.x + b.w, points.Max(p => p.x) + 1));
+            // Accepted v3 alpha edge (including AA=1), not the shorter B or canvas padding.
+            int right = checked(basis.Offset + Math.Max(b.x + b.w, referenceStrokeRight));
             shift = Math.Max(basis.Shift, checked(right + 1));
         }
         Need(offset >= short.MinValue && offset <= short.MaxValue && shift <= short.MaxValue, "METRICS_RANGE");
@@ -409,7 +453,21 @@ public static class FontAtlasCore
         foreach (var p in points)
         {
             int dst = (p.y * w + p.x - left) * 4;
-            if (pixels[dst + 3] != 0) { Need(!above, "MARK_OVERLAP"); continue; }
+            if (pixels[dst + 3] != 0)
+            {
+                Need(!above, "MARK_OVERLAP");
+                if (stroke && pixels[dst + 3] < 255)
+                {
+                    // Base OVER slash: opaque base pixels stay byte-identical, while
+                    // its AA edge is correctly composited over the transformed donor.
+                    int si = p.pixel * 4, baseAlpha = pixels[dst + 3], markAlpha = mark.Pixels[si + 3];
+                    int alphaNumerator = baseAlpha * 255 + markAlpha * (255 - baseAlpha);
+                    for (int c = 0; c < 3; c++)
+                        pixels[dst + c] = (byte)((pixels[dst + c] * baseAlpha * 255 + mark.Pixels[si + c] * markAlpha * (255 - baseAlpha) + alphaNumerator / 2) / alphaNumerator);
+                    pixels[dst + 3] = (byte)((alphaNumerator + 127) / 255);
+                }
+                continue;
+            }
             Array.Copy(mark.Pixels, p.pixel * 4, pixels, dst, 4); added++;
         }
         Need(added > 0, "NO_NEW_PIXELS");
@@ -417,7 +475,8 @@ public static class FontAtlasCore
             Offset = offset, Kerning = basis.Kerning.Clone() };
         Metrics(g);
         if (!above) Connected(g.Image); // no detached hook or disconnected stroke tabs after base-wins overlay
-        return new Composed { Glyph = g, Provenance = new { character = character.ToString(), basis = basis.Character.ToString(), donor,
+        return new Composed { Glyph = g, StrokeMark = stroke ? mark : null, StrokeX = strokeX - left, StrokeY = strokeY,
+            StrokeBaseX = -left, StrokeBaseY = 0, Provenance = new { character = character.ToString(), basis = basis.Character.ToString(), donor,
             recipe = Recipe, operation, geometry, donorTransform, markWidth = mark.W, markHeight = mark.H,
             baseSha256 = FontBuilderCore.Hash(basis.Image.Pixels), markSha256 = FontBuilderCore.Hash(mark.Pixels),
             resultSha256 = FontBuilderCore.Hash(pixels), baseX = -left, baseY = 0, verticalTranslation = 0,

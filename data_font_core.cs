@@ -23,14 +23,14 @@ public static class FontWriter
     public static readonly (int W, int H)[] OldSize = { (512,512), (1024,1024), (1024,1024), (512,256) };
     public static readonly Dictionary<string, (int Size, string Hash)> Pins = new()
     {
-        // Verified cc-spacing-verified-lolo8ojv/cc-font-atlas-007 bundle.
-        // Lowercase-only Offset/Shift correction; all four RGBA payloads unchanged.
-        ["manifest.json"] = (15394,"519f8ab82cf08ca88aea3b52cacbf5d9a804e0ea9be80dd5fde63401f02bbad0"),
-        ["report.json"] = (170011,"02b2b719b0e11112156663837ed4776cdfd9d22c85fe57fed968ba4a4617d726"),
-        ["Nerko.rgba"] = (184320,"6a3ad0d72f164872b4b6607cce3667c9ba9b967074a61e1f634d72d95c411527"),
-        ["NerkoLarge.rgba"] = (499712,"0ffdafc87619c7ab2bc673e44021e1e8335a2339eb725f23589606cfa0d00ac5"),
-        ["NerkoLarge2.rgba"] = (446464,"8d0d703cb1403a3d3b8a96e7ea098d0001828a555546d875fd8630df0ba83592"),
-        ["NerkoSmall.rgba"] = (159744,"bbeafeac5dcfd6d65c078af9d632486a58eee4e1c80465a13feb9e90f7113e34")
+        // Final-verification bundle atlas-001 (integration run 001), stroke variant B.
+        // Its manifest, report, and all four RGBA payloads are exact fixed inputs.
+        ["manifest.json"] = (15394,"f9374aca5971bc9a4bda50b904802c29a9beca794e54d9038f2dcf292f322cfa"),
+        ["report.json"] = (170447,"e700d721279e24080b6f07f5f174ec2cad06a2057f469c6ffa3d80b4ad6c3d3d"),
+        ["Nerko.rgba"] = (184320,"2214e509588c3c0396c8b257227fdcf2a62d2962c1291c8e7541d2da38206552"),
+        ["NerkoLarge.rgba"] = (499712,"18b2a1c1a3a5d086deed190c1f016d049b6a78db1422765433d13ef282d76aa9"),
+        ["NerkoLarge2.rgba"] = (446464,"9932e727638c1393fb98ddc4dff1e7d75a26f1cd01256c6a42bbb7dd9762e515"),
+        ["NerkoSmall.rgba"] = (159744,"e87f45966b34a846fbb725816b7065007d59d241065061295c52f41d967ecfaf")
     };
     public static void Need(bool ok, string why) => NoopPolicy.Require(ok, why);
     public static byte[] Json(object x) => JsonSerializer.SerializeToUtf8Bytes(x, new JsonSerializerOptions { WriteIndented = true });

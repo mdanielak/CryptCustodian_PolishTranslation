@@ -255,7 +255,7 @@ static class Tests
             Test("Unicode UTF8 manifest roundtrip",()=>{var b=LoadBundle();Need(FontBuilderCore.Text(b.Manifest,"required")=="ąćęłńóśźżĄĆĘŁŃÓŚŹŻ","UNICODE");});
             // Real bundle, synthetic old crops: complete placement/copy coverage without game parsing.
             var bundle=LoadBundle();
-            Test("bundle lowercase optical metrics allow overhang; uppercase unchanged",()=>{
+            Test("bundle B stroke metrics allow lowercase overhang; uppercase unchanged",()=>{
                 int[] lower={9,23,20,7},upper={19,52,46,16};
                 int[] lowerOffset={-4,-7,-6,-4},upperOffset={-6,-9,-10,-6};
                 for(int i=0;i<4;i++) foreach(char c in "łŁ")
