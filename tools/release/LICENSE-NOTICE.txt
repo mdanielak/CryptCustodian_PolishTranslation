@@ -1,27 +1,14 @@
-CRYPT CUSTODIAN — SPOLSZCZENIE 1.0-beta
-
-Publiczna beta, technicznie gotowa. Wersja pozostaje 1.0-beta.
-Wydanie jest bezpłatne. Jest to nieoficjalna, fanowska modyfikacja.
-Nie rościmy sobie praw własności do oryginalnej gry ani jej assetów (zasobów).
-Zmodyfikowane pliki wolno używać wyłącznie z legalnie uzyskanymi kopiami Crypt Custodian.
-Steam AppID 2394650. Gra, jej zasoby i znaki towarowe należą do odpowiednich
-właścicieli. Zgoda nie oznacza oficjalnego wydania ani zatwierdzenia jakości
-przez twórców, wydawcę gry lub Valve.
-
-Nie dołączono osobnych plików EXE, DLL, plików dźwiękowych ani wideo,
-ani kopii oryginalnych plików gry. Pliki instalacyjne to pełne zmodyfikowane
-data.win oraz translations.ini.
-data.win zawiera zasoby gry; nie jest wyłącznie autorskim kodem instalatora.
+CRYPT CUSTODIAN — SPOLSZCZENIE 1.0-beta-rc1-C-Force / C-Force
+Nieoficjalna, bezpłatna modyfikacja fanowska dla legalnie uzyskanych kopii gry.
+C-Force zastępuje pełne data.win i translations.ini; może cofnąć update gry lub inny mod.
+Nie rościmy praw do gry, zasobów ani znaków towarowych.
 
 POCHODZENIE I ZAKRES
-Treść zgody została przekazana przez użytkownika jako wiadomość od osoby
-przedstawiającej się jako developer i copyright holder Crypt Custodian.
-Nie zweryfikowano niezależnie tożsamości nadawcy, autorstwa ani autentyczności wiadomości.
-Podstawą opisu warunków tego wydania jest poniższy pełny cytat, nie szersza licencja.
-Tekst angielski jest nadrzędną treścią zgody; polskie podsumowanie jest wyłącznie objaśnieniem.
-Cytat wprost wymienia data.win; nie wymienia osobno translations.ini.
-Lista plików paczki jest opisem technicznym i nie rozszerza treści zgody.
-Niniejsza nota nie zastępuje warunków licencji gry.
+Treść zgody została przekazana przez użytkownika jako wiadomość od osoby przedstawiającej
+się jako developer i copyright holder Crypt Custodian. Nie zweryfikowano niezależnie
+jej tożsamości, autorstwa ani autentyczności. Tekst angielski jest nadrzędny; polskie
+podsumowanie jest wyłącznie objaśnieniem. Cytat wprost wymienia data.win, nie wymienia
+osobno translations.ini; lista techniczna paczki nie rozszerza zgody.
 
 CYTAT ANGIELSKI — TREŚĆ NADRZĘDNA
 
@@ -40,20 +27,9 @@ the modified files are used only in connection with legally obtained copies of C
 This permission specifically includes extracting, editing, replacing, and repackaging content contained within data.win where necessary for the modification."
 
 POLSKIE PODSUMOWANIE — WYŁĄCZNIE OBJAŚNIENIE
+Projekt ma być bezpłatny i jasno oznaczony jako nieoficjalny fanowski mod; nie wolno
+rościć praw do gry ani zasobów, a zmodyfikowanych plików używa się wyłącznie z legalną
+kopią Crypt Custodian. Objaśnienie nie dodaje uprawnień ani warunków.
 
-Osoba składająca oświadczenie zezwala na modyfikowanie data.win w celu
-tworzenia i utrzymywania fanowskiego tłumaczenia/modyfikacji gry oraz na
-dystrybucję zmodyfikowanych plików w ramach tego fanowskiego projektu,
-pod następującymi warunkami:
-1. Projekt jest rozpowszechniany bezpłatnie.
-2. Należy jasno wskazać, że to nieoficjalna, fanowska modyfikacja.
-3. Nie wolno rościć sobie praw własności do oryginalnej gry ani jej zasobów.
-4. Zmodyfikowanych plików wolno używać wyłącznie w połączeniu z legalnie
-   uzyskanymi kopiami Crypt Custodian.
-Zgoda wyraźnie obejmuje wyodrębnianie, edytowanie, zastępowanie i ponowne
-pakowanie zawartości data.win, gdy jest to niezbędne do modyfikacji.
-Objaśnienie nie dodaje uprawnień ani warunków; w razie rozbieżności nadrzędny
-jest dosłowny tekst angielski powyżej.
-
-Wersja beta: zachowaj kopie zapasowe, przeczytaj ograniczenia w CZYTAJ_MNIE.
-Brak podpisu cyfrowego. Hash SHA-256 jest kontrolą integralności, nie podpisem.
+Brak podpisu cyfrowego; SHA-256 kontroluje integralność, nie autorstwo. Szczegóły ryzyka,
+backupów i odzyskiwania: CZYTAJ_MNIE.txt.

@@ -29,7 +29,7 @@ class PackagingTests(unittest.TestCase):
 
     def test_roundtrip_crc_sha_bytes_and_determinism(self):
         make_zip(self.package, self.archive)
-        self.assertEqual(len(audit_zip(self.package, self.archive)), 10)
+        self.assertEqual(len(audit_zip(self.package, self.archive)), len(FILES))
         second = self.root / "second.zip"
         make_zip(self.package, second)
         self.assertEqual(self.archive.read_bytes(), second.read_bytes())

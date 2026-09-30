@@ -1,4 +1,5 @@
 # Lokalne katalogi robocze i artefakty wydania
+/.slim/deepwork/
 /work/
 /release/
 /inputs/

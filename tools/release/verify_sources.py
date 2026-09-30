@@ -7,15 +7,15 @@ from pathlib import Path
 import re
 import tempfile
 
-VERSION = "1.0-beta"
-NAME = "CryptCustodian_Spolszczenie_" + "v" + VERSION
+VERSION = "1.0-beta-rc1-C-Force"
+NAME = "CryptCustodian_Spolszczenie_v1.0-beta-rc1-C-Force"
 TEMP = Path(os.environ.get("CC_RELEASE_TEMP", tempfile.gettempdir())).absolute()
 ORIGINAL = {
     "data.win": "15e2c8ef57f4c5f599589b5d15021281a11b73757be54d0bbf739d57dd280b99",
     "translations.ini": "09d193cf8ef131c4bf9127bab49aeb9bf4c5cea88113a32d2c88813bd0dd286f",
 }
 PATCHED = {
-    "data.win": "01cb062f18456f4b44385944f21534b88670e2769a22f48cb6f01d895e64e73e",
+    "data.win": "6ec2a376367df0832aea144f48e5b8928bc3e3cb466615bb97b2bdf51c477f1b",
     "translations.ini": "deeda976d7bf414bce0fe1af7d0f9719efa990bb83d4c956f989dfc886dc055f",
 }
 EXE = "252277ea55574e67877fe20fd4532ff97b6bc75dc514605593c6788b1fa9c0a0"

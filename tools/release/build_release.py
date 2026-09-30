@@ -22,6 +22,7 @@ FILES = sorted([
     "CZYTAJ_MNIE.txt", "instaluj.bat", "instaluj.ps1", "odinstaluj.bat",
     "odinstaluj.ps1", "GameFiles/data.win", "GameFiles/translations.ini",
     "release-manifest.json", "SHA256SUMS.txt", "LICENSE-NOTICE.txt",
+    "c_force_installer.py", "INSTALUJ.sh", "ODINSTALUJ.sh", "selftest_c.ps1",
 ])
 
 
@@ -73,14 +74,21 @@ def prepare(target, sources):
     target.mkdir(exist_ok=False)
     (target / "GameFiles").mkdir()
     manifest = {
-        "schema": "crypt-custodian-polish-release/v1", "version": VERSION,
-        "status": "public-beta", "technicalReadiness": "ready",
+        "schema": "crypt-custodian-polish-release/v1", "profile": "C-Force", "version": VERSION,
+        "status": "release-candidate", "technicalReadiness": "force-replacement",
         "distributionPermission": permission_metadata(),
         "legalCopyRequired": True, "fanTranslation": True,
         "rightsNotice": "Gra, jej zasoby i znaki towarowe należą do odpowiednich właścicieli.",
         "appId": "2394650", "engine": "GameMaker/YYC",
-        "platform": "Steam Windows x64", "languageSelection": "English",
+        "platforms": ["Windows x64", "Steam Deck/Proton"], "languageSelection": "English",
         "uncertainEntries": 125, "exeSha256": EXE,
+        "forceReplacement": True,
+        "limitations": [
+            "C-Force replaces both complete files and can revert a game update or another mod.",
+            "The pair is not atomic; interruption can require manual recovery or Steam file verification.",
+            "Backups are per-installer state and recovery is limited to recognized files and complete receipts.",
+            "125 translation entries are uncertain; no full language/UI test or physical Steam Deck test was performed."
+        ],
         "payload": [dict(name=n, originalSha256=ORIGINAL[n], **inputs[n]) for n in PATCHED],
     }
     manifest_bytes = text_bytes(json.dumps(manifest, ensure_ascii=True, indent=2) + "\n")
@@ -92,12 +100,18 @@ def prepare(target, sources):
             dst.flush()
             os.fsync(dst.fileno())
         assert digest(target / "GameFiles" / n) == PATCHED[n]
-    installer = (HERE / "installer.ps1").read_text(encoding="utf-8-sig")
+    installer = (HERE / "installer_c.ps1").read_text(encoding="utf-8-sig")
     installer = installer.replace("__MANIFEST_SHA256__", manifest_hash)
-    installer = installer.replace("__SELF_TEST_FUNCTIONS__", (HERE / "selftest.ps1").read_text(encoding="utf-8-sig"))
-    assert "__MANIFEST_SHA256__" not in installer and "__SELF_TEST_FUNCTIONS__" not in installer
+    assert "__MANIFEST_SHA256__" not in installer
     write_new(target / "instaluj.ps1", text_bytes(installer, bom=True))
-    for n in ["odinstaluj.ps1", "CZYTAJ_MNIE.txt", "LICENSE-NOTICE.txt"]:
+    linux_installer = (HERE / "c_force_installer.py").read_text(encoding="utf-8")
+    linux_installer = linux_installer.replace("__MANIFEST_SHA256__", manifest_hash)
+    assert "__MANIFEST_SHA256__" not in linux_installer
+    write_new(target / "c_force_installer.py", linux_installer.encode("utf-8"))
+    for n in ["INSTALUJ.sh", "ODINSTALUJ.sh"]:
+        write_new(target / n, (HERE / n).read_bytes())
+        os.chmod(target / n, 0o755)
+    for n in ["odinstaluj.ps1", "selftest_c.ps1", "CZYTAJ_MNIE.txt", "LICENSE-NOTICE.txt"]:
         write_new(target / n, text_bytes((HERE / n).read_text(encoding="utf-8-sig"), bom=True))
     for action in ["instaluj", "odinstaluj"]:
         write_new(target / f"{action}.bat", bat_bytes(action))
@@ -163,7 +177,7 @@ def make_zip(root, target):
             info.compress_type = zipfile.ZIP_DEFLATED
             info.compress_level = 9
             info.create_system = 3
-            info.external_attr = 0o100644 << 16
+            info.external_attr = (0o100755 if name.endswith(".sh") else 0o100644) << 16
             with (root / name).open("rb") as src, z.open(info, "w") as dst:
                 shutil.copyfileobj(src, dst, 1024 * 1024)
     with target.open("r+b") as f:
@@ -178,7 +192,7 @@ def audit_zip(root, target):
         for n, info in zip(FILES, z.infolist()):
             assert not info.is_dir() and not (info.flag_bits & 1)
             assert info.date_time == (2026, 9, 28, 0, 0, 0)
-            assert (info.external_attr >> 16) == 0o100644
+            assert (info.external_attr >> 16) == (0o100755 if n.endswith(".sh") else 0o100644)
             h = hashlib.sha256()
             count = 0
             with z.open(info) as archived, (root / n).open("rb") as source:

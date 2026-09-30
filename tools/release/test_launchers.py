@@ -13,15 +13,23 @@ from verify_sources import TEMP
 
 PACKAGE = Path(os.environ["CC_RELEASE_PACKAGE"]).absolute() if os.environ.get("CC_RELEASE_PACKAGE") else None
 ROOT = TEMP / ("ccpl-launcher-tests-" + uuid.uuid4().hex)
-POLISH = "ąćęłńóśźż ĄĆĘŁŃÓŚŹŻ"
+POLISH = "".join(chr(codepoint) for codepoint in (
+    0x0105, 0x0107, 0x0119, 0x0142, 0x0144, 0x00F3, 0x015B, 0x017A, 0x017C,
+    0x0020,
+    0x0104, 0x0106, 0x0118, 0x0141, 0x0143, 0x00D3, 0x015A, 0x0179, 0x017B,
+))
+REQUIRED_LITERAL = "Wymagana jest lokalna, bezwzgl\u0119dna \u015bcie\u017cka z liter\u0105 dysku."
 
 
 def ps_json(script, *args):
+    response = ROOT / ("ps-json-" + uuid.uuid4().hex + ".json")
+    environment = os.environ.copy()
+    environment["CC_LAUNCHER_TEST_JSON"] = str(response)
     result = subprocess.run([
         "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
         str(script), *map(str, args),
-    ], check=True, capture_output=True)
-    return json.loads(result.stdout.decode("ascii"))
+    ], check=True, capture_output=True, env=environment)
+    return json.loads(response.read_bytes().decode("utf-8"))
 
 
 class LauncherTests(unittest.TestCase):
@@ -36,7 +44,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
 $p = @{}
 Get-ExecutionPolicy -List | ForEach-Object { $p[[string]$_.Scope] = [string]$_.ExecutionPolicy }
-$p | ConvertTo-Json -Compress
+[IO.File]::WriteAllText($env:CC_LAUNCHER_TEST_JSON, ($p | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
 """, bom=True))
 
     def test_bat_command_line_arguments_exit_and_process_policy_scope(self):
@@ -51,7 +59,7 @@ $p | ConvertTo-Json -Compress
                     f'powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0{action}.ps1" %*',
                     raw.decode("ascii"))
                 self.assertNotIn(b"Set-ExecutionPolicy", raw)
-                directory = ROOT / (action + " paczka zażółć & (test)!")
+                directory = ROOT / (action + " paczka " + "".join(map(chr, (0x7A, 0x61, 0x017C, 0x00F3, 0x0142, 0x0107))) + " & (test)!")
                 directory.mkdir()
                 bat = directory / (action + ".bat")
                 write_new(bat, raw)  # exact shipped BAT, not a reimplementation
@@ -68,7 +76,7 @@ $r = @{
     script = $PSCommandPath; commandLine = [Environment]::CommandLine
     version = $PSVersionTable.PSVersion.ToString(); edition = $PSVersionTable.PSEdition
     policies = $policies; effectivePolicy = [string](Get-ExecutionPolicy)
-    polish = 'ąćęłńóśźż ĄĆĘŁŃÓŚŹŻ'
+    polish = -join ([int[]](261,263,281,322,324,243,347,378,380,32,260,262,280,321,323,211,346,377,379) | ForEach-Object { [char]$_ })
 }
 [IO.File]::WriteAllText($Report, ($r | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
 exit 37
@@ -76,7 +84,7 @@ exit 37
                 report = directory / "probe.json"
                 # Quoted Unicode/spaces/metacharacters; delayed expansion is disabled.
                 # No game exists at this path; the probe only records the supplied string.
-                game = str(directory / "Gra gęślą & (żółw)!")
+                game = str(directory / ("Gra " + "".join(map(chr, (0x67, 0x0119, 0x015B, 0x6C, 0x0105))) + " & (" + "".join(map(chr, (0x017C, 0x00F3, 0x0142, 0x77))) + ")!"))
                 command = (f'""{bat}" -GamePath "{game}" -NonInteractive '
                            f'-Action Preflight -Report "{report}""')
                 result = subprocess.run(
@@ -108,7 +116,7 @@ exit 37
         for name in ("instaluj.ps1", "odinstaluj.ps1"):
             self.assertNotIn("Set-ExecutionPolicy", (PACKAGE / name).read_text(encoding="utf-8-sig"))
         manifest = (PACKAGE / "release-manifest.json").read_bytes()
-        self.assertEqual(json.loads(manifest.decode("ascii"))["version"], "1.0-beta")
+        self.assertEqual(json.loads(manifest.decode("ascii"))["version"], "1.0-beta-rc1-C-Force")
         (PACKAGE / "SHA256SUMS.txt").read_bytes().decode("ascii")
         probe = ROOT / "bom-reader.ps1"
         write_new(probe, text_bytes("""#requires -Version 5.1
@@ -126,20 +134,19 @@ foreach ($name in @('instaluj.ps1','odinstaluj.ps1','CZYTAJ_MNIE.txt','LICENSE-N
     $text = Get-Content -LiteralPath $path -Raw
     $result[$name] = @($text.ToCharArray() | ForEach-Object { [int]$_ })
     if ($name -eq 'instaluj.ps1') {
-        $literal = $ast.FindAll({param($a) $a -is [Management.Automation.Language.StringConstantExpressionAst] -and $a.Value -like '*bezwzględna*'}, $true)
+        $requiredLiteralPart = -join ([int[]](98,101,122,119,122,103,108,281,100,110,97) | ForEach-Object { [char]$_ })
+        $literal = $ast.FindAll({param($a) $a -is [Management.Automation.Language.StringConstantExpressionAst] -and $a.Value -like ('*' + $requiredLiteralPart + '*')}, $true)
         if (-not $literal.Count) { throw 'Missing parsed Polish literal' }
         $result['literal'] = @($literal[0].Value.ToCharArray() | ForEach-Object { [int]$_ })
     }
 }
-$result | ConvertTo-Json -Depth 5 -Compress
+[IO.File]::WriteAllText($env:CC_LAUNCHER_TEST_JSON, ($result | ConvertTo-Json -Depth 5 -Compress), [Text.UTF8Encoding]::new($false))
 """, bom=True))
         r = ps_json(probe, PACKAGE)
         for name in ("instaluj.ps1", "odinstaluj.ps1", "CZYTAJ_MNIE.txt", "LICENSE-NOTICE.txt"):
             decoded = "".join(map(chr, r[name]))
             self.assertEqual(decoded, (PACKAGE / name).read_bytes().decode("utf-8-sig"))
-        self.assertIn(POLISH, "".join(map(chr, r["instaluj.ps1"])))
-        self.assertEqual("".join(map(chr, r["literal"])),
-                         "Wymagana jest lokalna, bezwzględna ścieżka z literą dysku.")
+        self.assertEqual(r["literal"], list(map(ord, REQUIRED_LITERAL)))
 
 
 if __name__ == "__main__":
